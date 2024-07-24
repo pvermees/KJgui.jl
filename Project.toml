@@ -1,0 +1,8 @@
+name = "PTgui"
+uuid = "2eef9ca3-af0c-42e0-b773-62fdacf1adee"
+authors = ["pvermees <p.vermeesch@ucl.ac.uk>"]
+version = "0.1.0"
+
+[deps]
+Gtk = "4c0ca9eb-093a-5379-98c5-f87ac0bbbf44"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
