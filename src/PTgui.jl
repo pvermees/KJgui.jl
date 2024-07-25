@@ -1,6 +1,6 @@
 module PTgui
 
-using Gtk
+using Plasmatrace, Gtk
 
 include("main.jl")
 

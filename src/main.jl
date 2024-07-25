@@ -3,5 +3,6 @@ function main()
     b = GtkButton("Click Me")
     push!(win,b)
     showall(win)
+    dump(Plasmatrace.PTree())
 end
 export main
