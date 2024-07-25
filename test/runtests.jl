@@ -1,7 +1,7 @@
-using PTgui, Gtk, Test
+using PTgui, Test, Infiltrator
 
 function maintest()
     main()
 end
 
-@testset "main test" begin maintest() end
+@testset "top menu test" begin maintest() end

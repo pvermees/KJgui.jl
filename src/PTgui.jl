@@ -1,6 +1,6 @@
 module PTgui
 
-using Plasmatrace, Gtk
+using Plasmatrace, Gtk4, Infiltrator
 
 include("main.jl")
 
