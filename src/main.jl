@@ -1,4 +1,4 @@
-function main()
+function PT()
 
     tree = Plasmatrace.PTree()
 
@@ -24,5 +24,6 @@ function main()
     push!(win, cb)
 
     show(win)
+    
 end
-export main
+export PT
