@@ -1,7 +1,12 @@
 using PTgui, Plasmatrace, Test, Infiltrator
 
-function PTtest()
-    Plasmatrace.PT!(PTgui,logbook="test.log")
+function PlasmatraceTest()
+    Plasmatrace.PT!(logbook="test.log")
 end
 
-@testset "top menu test" begin PTtest() end
+function ExtensionTest()
+    Plasmatrace.PT!(PTgui,logbook="instrument.log")
+end
+
+@testset "Plasmatrace test" begin PlasmatraceTest() end
+@testset "Extension test" begin ExtensionTest() end
