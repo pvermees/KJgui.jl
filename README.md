@@ -8,22 +8,23 @@ extension that provides a graphical user interface to Plasmatrace.
 
 ## Installation
 
+Enter the following commands at the Julia console (a.k.a REPL):
+
 ```
 import Pkg
 Pkg.add(url="https://github.com/pvermees/Plasmatrace.git")
 Pkg.add(url="https://github.com/pvermees/PTgui.git")
 ```
 
-## Example
-
-At the Julia REPL:
+## Minimal working example
 
 ```
 julia> using Plasmatrace, PTgui
 julia> PT!(PTgui)
 -------------------
- Plasmatrace 0.6.1
+ Plasmatrace 0.6.0 
 -------------------
+
 r: Read data files[*]
 m: Specify the method[*]
 t: Tabulate the samples
@@ -38,5 +39,8 @@ u: Update
 c: Clear
 x: Exit
 ?: Help
+x
+
+julia> 
 ```
 
