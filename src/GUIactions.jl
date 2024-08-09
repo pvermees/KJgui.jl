@@ -1,16 +1,15 @@
 function GUIloadICPdir!(ctrl::AbstractDict)
-    win = GtkWindow("Plasmatrace")
-    dname = open_dialog("Choose a folder",win;select_folder=true,start_folder=pwd())
+    dname = open_dialog("Choose a folder",ctrl["gui"];
+                        select_folder=true,
+                        start_folder=ctrl["ICPpath"])
     Plasmatrace.TUIloadICPdir!(ctrl,dname)
-    destroy(win)
     return "xx"
 end
 export GUIloadICPdir!
 
 function GUIloadICPfile!(ctrl::AbstractDict)
-    win = GtkWindow("My First Gtk4.jl Program",-1,-1,true,false)
-    fname = open_dialog("Choose a file",win;
-                        start_folder=pwd())
+    fname = open_dialog("Choose a file",ctrl["gui"];
+                        start_folder=ctrl["ICPpath"])
     return Plasmatrace.TUIloadICPfile!(ctrl,fname)
 end
 export GUIloadICPfile!

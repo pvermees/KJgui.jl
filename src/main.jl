@@ -1,17 +1,16 @@
-function PTree!(tree::AbstractDict)
+function extend!(_PT::AbstractDict)
+
+    _PT["ctrl"]["gui"] = GtkWindow("Plasmatrace",-1,-1,true,false)
     
-    updateTree!(tree,
+    updateTree!(_PT["tree"],
                 "dir|file";
                 action=Dict(
                     "d" => GUIloadICPdir!,
                     "p" => GUIloadICPfile!
                 ))
-
-    Gtk4.GLib.G_.set_application_name("Plasmatrace")
-    Gtk4.GLib.G_.set_prgname("Plasmatrace")
-    
+        
 end
-export PTree!
+export extend!
 
 function updateTree!(tree::AbstractDict,
                      key::AbstractString;
