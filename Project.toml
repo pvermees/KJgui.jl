@@ -1,7 +1,7 @@
 name = "PTgui"
 uuid = "2eef9ca3-af0c-42e0-b773-62fdacf1adee"
 authors = ["pvermees <p.vermeesch@ucl.ac.uk>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 Gtk4 = "9db2cae5-386f-4011-9d63-a5602296539b"

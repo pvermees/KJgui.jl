@@ -20,9 +20,9 @@ Pkg.add(url="https://github.com/pvermees/PTgui.git")
 
 ```
 julia> using Plasmatrace, PTgui
-julia> PT!(PTgui)
+julia> PT(PTgui)
 -------------------
- Plasmatrace 0.6.0 
+ Plasmatrace 0.6.4
 -------------------
 
 r: Read data files[*]

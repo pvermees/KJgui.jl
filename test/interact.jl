@@ -10,4 +10,4 @@ rerun = true
 
 using Revise, PTgui, Plasmatrace, Test, Infiltrator
 
-Plasmatrace.PT!(PTgui)
+Plasmatrace.PT(PTgui)
