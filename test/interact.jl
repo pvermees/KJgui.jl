@@ -8,6 +8,7 @@ end
 
 rerun = true
 
-using Revise, PTgui, Plasmatrace, Test, Infiltrator
+using Revise, PTgui, Test, Infiltrator
+import Plasmatrace
 
 Plasmatrace.PT(PTgui)
