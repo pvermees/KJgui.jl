@@ -22,3 +22,35 @@ function GUIloadICPfile!(ctrl::AbstractDict)
     return "xx"
 end
 export GUIloadICPfile!
+
+function GUIimportLog!(ctrl::AbstractDict)
+    open_dialog("Choose a session log",ctrl["gui"]) do fname
+        @async Plasmatrace.TUIimportLog!(ctrl,fname)
+    end
+    return nothing
+end
+export GUIimportLog!
+
+function GUIexportLog(ctrl::AbstractDict)
+    save_dialog("Choose a file name",ctrl["gui"]) do fname
+        @async Plasmatrace.TUIexportLog!(ctrl,fname)
+    end
+    return "xx"
+end
+export GUIexportLog
+
+function GUIopenTemplate!(ctrl::AbstractDict)
+    open_dialog("Choose a Plasmatrace template",ctrl["gui"]) do fname
+        @async Plasmatrace.TUIopenTemplate!(ctrl,fname)
+    end
+    return "xx"
+end
+export GUIopenTemplate!
+
+function GUIsaveTemplate(ctrl::AbstractDict)
+    save_dialog("Choose a file name",ctrl["gui"]) do fname
+        @async Plasmatrace.TUIsaveTemplate(ctrl,fname)
+    end
+    return "xx"
+end
+export GUIsaveTemplate
