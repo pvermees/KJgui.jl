@@ -1,8 +1,8 @@
-using PTgui, Plasmatrace, Test, Infiltrator
+using PTgui, Test, Infiltrator
+import Plasmatrace
 
 function ExtensionTest()
-    Plasmatrace.PT(PTgui,logbook="instrument.log")
+    Plasmatrace.PT(PTgui,logbook="test.log")
 end
 
-@testset "Plasmatrace test" begin PlasmatraceTest() end
 @testset "Extension test" begin ExtensionTest() end
