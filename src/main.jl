@@ -27,6 +27,8 @@ function extend!(_PT::AbstractDict)
     updateTree!(_PT["tree"],"export";
                 action = GUIsubset!)
 
+    Gtk4.GLib.G_.set_prgname("Plasmatrace")
+
 end
 export extend!
 
