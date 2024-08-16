@@ -9,7 +9,7 @@ function extend!(_PT::AbstractDict)
                               "p" => GUIloadICPfile!))
 
     updateTree!(_PT["tree"],"log";
-                action=Dict(
+                action = Dict(
                     "i" => GUIimportLog!,
                     "e" => GUIexportLog,
                     "o" => GUIopenTemplate!,
@@ -17,11 +17,14 @@ function extend!(_PT::AbstractDict)
                 ))
 
     updateTree!(_PT["tree"],"format";
-                action=Dict(
+                action = Dict(
                     "c" => GUIexport2csv,
                     "j" => GUIexport2json
                 ))
-        
+
+    updateTree!(_PT["tree"],"export";
+                action = GUIsubset!)
+
 end
 export extend!
 
@@ -105,16 +108,30 @@ function GUIsaveTemplate(ctrl::AbstractDict)
 end
 export GUIsaveTemplate
 
+function GUIsubset!(ctrl::AbstractDict,
+                    response::AbstractString)
+    out = Plasmatrace.TUIsubset!(ctrl,response)
+    if out == "csv"
+        return GUIexport2csv(ctrl)
+    else
+        return "format"
+    end
+end
+
 function GUIexport2csv(ctrl::AbstractDict)
-    save_dialog("Choose a file name",ctrl["gui"]) do fname
+    save_dialog("Choose a csv file name",ctrl["gui"]) do fname
         @async Plasmatrace.TUIexport2csv(ctrl,fname)
     end
-    return "xxx"
+    if ctrl["method"] == "concentrations"
+        return "xx"
+    else
+        return "xxx"
+    end
 end
 export GUIexport2csv
 
 function GUIexport2json(ctrl::AbstractDict)
-    save_dialog("Choose a file name",ctrl["gui"]) do fname
+    save_dialog("Choose a json file name",ctrl["gui"]) do fname
         @async Plasmatrace.TUIexport2json(ctrl,fname)
     end
     return "xxx"
