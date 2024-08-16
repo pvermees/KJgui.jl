@@ -2,6 +2,8 @@ function extend!(_PT::AbstractDict)
 
     _PT["ctrl"]["gui"] = GtkWindow("Plasmatrace",-1,-1,true,false)
 
+    _PT["tree"]["top"].action["r"] = GUIread!
+    
     _PT["tree"]["top"].action["c"] = GUIclear!
 
     updateTree!(_PT["tree"],"dir|file",
@@ -34,6 +36,18 @@ function updateTree!(tree::AbstractDict,
                      help=tree[key].help,
                      action=tree[key].action)
     tree[key] = (message=message,help=help,action=action)
+end
+
+function GUIread!(ctrl::AbstractDict)
+    if ctrl["template"]
+        if ctrl["multifile"]
+            return GUIloadICPdir!(ctrl)
+        else
+            return GUIloadICPfile!(ctrl)
+        end
+    else
+        return "instrument"
+    end
 end
 
 function GUIclear!(ctrl::AbstractDict)
@@ -96,7 +110,10 @@ function GUIopenTemplate!(ctrl::AbstractDict)
     open_dialog("Choose a Plasmatrace template",ctrl["gui"]) do fname
         @async Plasmatrace.TUIopenTemplate!(ctrl,fname)
     end
-    return "xx"
+    ctrl["priority"]["method"] = false
+    ctrl["priority"]["standards"] = false
+    ctrl["priority"]["glass"] = false
+    return "x"
 end
 export GUIopenTemplate!
 
@@ -123,9 +140,9 @@ function GUIexport2csv(ctrl::AbstractDict)
         @async Plasmatrace.TUIexport2csv(ctrl,fname)
     end
     if ctrl["method"] == "concentrations"
-        return "xx"
+        return "x"
     else
-        return "xxx"
+        return "xx"
     end
 end
 export GUIexport2csv
