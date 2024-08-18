@@ -95,6 +95,7 @@ export GUIloadICPfile!
 function GUIimportLog!(ctrl::AbstractDict)
     open_dialog("Choose a session log",ctrl["gui"]) do fname
         @async Plasmatrace.TUIimportLog!(ctrl,fname)
+        push!(ctrl["history"],["importLog",fname])
     end
     return nothing
 end
@@ -111,6 +112,7 @@ export GUIexportLog
 function GUIopenTemplate!(ctrl::AbstractDict)
     open_dialog("Choose a Plasmatrace template",ctrl["gui"]) do fname
         @async Plasmatrace.TUIopenTemplate!(ctrl,fname)
+        push!(ctrl["history"],["openTemplate",fname])
     end
     ctrl["priority"]["method"] = false
     ctrl["priority"]["standards"] = false
@@ -122,6 +124,7 @@ export GUIopenTemplate!
 function GUIsaveTemplate(ctrl::AbstractDict)
     save_dialog("Choose a file name",ctrl["gui"]) do fname
         @async Plasmatrace.TUIsaveTemplate(ctrl,fname)
+        push!(ctrl["history"],["saveTemplate",fname])
     end
     return "xx"
 end
@@ -140,6 +143,7 @@ end
 function GUIexport2csv(ctrl::AbstractDict)
     save_dialog("Choose a csv file name",ctrl["gui"]) do fname
         @async Plasmatrace.TUIexport2csv(ctrl,fname)
+        push!(ctrl["history"],["csv",fname])
     end
     if ctrl["method"] == "concentrations"
         return "x"
@@ -152,6 +156,7 @@ export GUIexport2csv
 function GUIexport2json(ctrl::AbstractDict)
     save_dialog("Choose a json file name",ctrl["gui"]) do fname
         @async Plasmatrace.TUIexport2json(ctrl,fname)
+        push!(ctrl["history"],["json",fname])
     end
     return "xxx"
 end
