@@ -158,6 +158,6 @@ function GUIexport2json(ctrl::AbstractDict)
         @async Plasmatrace.TUIexport2json(ctrl,fname)
         push!(ctrl["history"],["json",fname])
     end
-    return "xxx"
+    return "xx"
 end
 export GUIexport2json
