@@ -126,7 +126,7 @@ function GUIsaveTemplate(ctrl::AbstractDict)
         @async Plasmatrace.TUIsaveTemplate(ctrl,fname)
         push!(ctrl["history"],["saveTemplate",fname])
     end
-    return "xx"
+    return "x"
 end
 export GUIsaveTemplate
 
