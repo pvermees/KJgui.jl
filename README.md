@@ -12,8 +12,8 @@ Enter the following commands at the Julia console (a.k.a REPL):
 
 ```
 import Pkg
-Pkg.add(url="https://github.com/pvermees/Plasmatrace.git")
-Pkg.add(url="https://github.com/pvermees/PTgui.git")
+Pkg.add(url="https://github.com/pvermees/Plasmatrace.jl.git")
+Pkg.add(url="https://github.com/pvermees/PTgui.jl.git")
 ```
 
 ## Minimal working example
