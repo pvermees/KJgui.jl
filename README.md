@@ -22,7 +22,7 @@ Pkg.add(url="https://github.com/pvermees/PTgui.jl.git")
 julia> using Plasmatrace, PTgui
 julia> PT(PTgui)
 -------------------
- Plasmatrace 0.6.4
+ Plasmatrace 0.7.4
 -------------------
 
 r: Read data files[*]
@@ -37,6 +37,7 @@ l: Logs and templates
 o: Options
 u: Update
 c: Clear
+a: Extra
 x: Exit
 ?: Help
 x
