@@ -27,6 +27,18 @@ function extend!(_PT::AbstractDict)
     updateTree!(_PT["tree"],"export";
                 action = GUIsubset!)
 
+    updateTree!(_PT["tree","view"];
+                action = Dict(
+                    "n" => GUInext!,
+                    "p" => GUIprevious!,
+                    "g" => GUIgoto!,
+                    "t" => TUItabulate,
+                    "r" => "setDen",
+                    "b" => "Bwin",
+                    "s" => "Swin",
+                    "d" => "transformation"
+                ))
+
     Gtk4.GLib.G_.set_prgname("Plasmatrace")
 
 end

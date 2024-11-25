@@ -16,3 +16,24 @@ function MakiePlot()
     return fig
 end
 export MakiePlot
+
+function GUInext!(ctrl::AbstractDict)
+    ctrl["i"] += 1
+    if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
+    return GUIplotter(ctrl)
+end
+
+function GUIprevious!(ctrl::AbstractDict)
+    ctrl["i"] -= 1
+    if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
+    return GUIplotter(ctrl)
+end
+
+function GUIgoto!(ctrl::AbstractDict,
+                  response::AbstractString)
+    ctrl["i"] = parse(Int,response)
+    if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
+    if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
+    GUIplotter(ctrl)
+    return "x"
+end
