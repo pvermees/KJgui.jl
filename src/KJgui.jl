@@ -1,7 +1,7 @@
-module PTgui
+module KJgui
 
 using Infiltrator, Gtk4, Makie
-import Plasmatrace
+import KJ
 
 include("main.jl")
 include("dialogs.jl")

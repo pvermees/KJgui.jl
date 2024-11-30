@@ -1,14 +1,14 @@
 if !(@isdefined rerun)
     using Pkg
-    Pkg.activate("/home/pvermees/git/PTgui")
+    Pkg.activate("/home/pvermees/git/KJgui.jl")
     Pkg.instantiate()
     Pkg.precompile()
-    cd("/home/pvermees/git/PTgui/test")
+    cd("/home/pvermees/git/KJgui.jl/test")
 end
 
 rerun = true
 
-using Revise, PTgui, Test, Infiltrator
-import Plasmatrace
+using Revise, KJgui, Test, Infiltrator
+import KJ
 
-Plasmatrace.PT(PTgui)
+KJ.TUI(KJgui)

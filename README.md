@@ -1,10 +1,11 @@
-# PTgui
+# KJgui
 
-## GUI for Plasmatrace
+## GUI for KJ
 
-Plasmatrace is a free and open data reduction software package for
-LA-ICP-MS written in [Julia](https://julialang.org/). PTgui is an
-extension that provides a graphical user interface to Plasmatrace.
+[KJ](https://github.com/pvermees/KJ.jl) is a free and open data
+reduction software package for LA-ICP-MS written in
+[Julia](https://julialang.org/). KJgui is an extension that provides a
+graphical user interface to KJ.
 
 ## Installation
 
@@ -12,18 +13,18 @@ Enter the following commands at the Julia console (a.k.a REPL):
 
 ```
 import Pkg
-Pkg.add(url="https://github.com/pvermees/Plasmatrace.jl.git")
-Pkg.add(url="https://github.com/pvermees/PTgui.jl.git")
+Pkg.add(url="https://github.com/pvermees/KJ.jl.git")
+Pkg.add(url="https://github.com/pvermees/KJgui.jl.git")
 ```
 
 ## Minimal working example
 
 ```
-julia> using Plasmatrace, PTgui
-julia> PT(PTgui)
--------------------
- Plasmatrace 0.7.4
--------------------
+julia> using KJ, KJgui
+julia> KJ(KJgui)
+----------
+ KJ 0.0.1
+----------
 
 r: Read data files[*]
 m: Specify the method[*]

@@ -1,16 +1,16 @@
-function extend!(_PT::AbstractDict)
+function extend!(_KJ::AbstractDict)
 
-    _PT["ctrl"]["gui"] = GtkWindow("Plasmatrace",-1,-1,true,false)
+    _KJ["ctrl"]["gui"] = GtkWindow("KJ",-1,-1,true,false)
 
-    _PT["tree"]["top"].action["r"] = GUIread!
+    _KJ["tree"]["top"].action["r"] = GUIread!
     
-    _PT["tree"]["top"].action["c"] = GUIclear!
+    _KJ["tree"]["top"].action["c"] = GUIclear!
 
-    updateTree!(_PT["tree"],"dir|file",
+    updateTree!(_KJ["tree"],"dir|file",
                 action = Dict("d" => GUIloadICPdir!,
                               "p" => GUIloadICPfile!))
 
-    updateTree!(_PT["tree"],"log";
+    updateTree!(_KJ["tree"],"log";
                 action = Dict(
                     "i" => GUIimportLog!,
                     "e" => GUIexportLog,
@@ -18,28 +18,28 @@ function extend!(_PT::AbstractDict)
                     "s" => GUIsaveTemplate
                 ))
 
-    updateTree!(_PT["tree"],"format";
+    updateTree!(_KJ["tree"],"format";
                 action = Dict(
                     "c" => GUIexport2csv,
                     "j" => GUIexport2json
                 ))
 
-    updateTree!(_PT["tree"],"export";
+    updateTree!(_KJ["tree"],"export";
                 action = GUIsubset!)
 
-    updateTree!(_PT["tree","view"];
-                action = Dict(
-                    "n" => GUInext!,
-                    "p" => GUIprevious!,
-                    "g" => GUIgoto!,
-                    "t" => TUItabulate,
-                    "r" => "setDen",
-                    "b" => "Bwin",
-                    "s" => "Swin",
-                    "d" => "transformation"
-                ))
+    #updateTree!(_KJ["tree","view"];
+    #            action = Dict(
+    #                "n" => GUInext!,
+    #                "p" => GUIprevious!,
+    #                "g" => GUIgoto!,
+    #                "t" => TUItabulate,
+    #                "r" => "setDen",
+    #                "b" => "Bwin",
+    #                "s" => "Swin",
+    #                "d" => "transformation"
+    #            ))
 
-    Gtk4.GLib.G_.set_prgname("Plasmatrace")
+    Gtk4.GLib.G_.set_prgname("KJ")
 
 end
 export extend!
