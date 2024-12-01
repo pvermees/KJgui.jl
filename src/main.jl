@@ -7,7 +7,7 @@ function extend!(_KJ::AbstractDict)
     _KJ["tree"]["top"].action["c"] = GUIclear!
 
     _KJ["tree"]["top"].action["v"] = GUIviewer!
-
+    
     updateTree!(_KJ["tree"],"dir|file",
                 action = Dict("d" => GUIloadICPdir!,
                               "p" => GUIloadICPfile!))
@@ -33,13 +33,16 @@ function extend!(_KJ::AbstractDict)
                 action = Dict(
                     "n" => GUInext!,
                     "p" => GUIprevious!,
-                    "g" => GUIgoto!,
+                    "g" => "goto",
                     "t" => KJ.TUItabulate,
                     "r" => "setDen",
                     "b" => "Bwin",
                     "s" => "Swin",
                     "d" => "transformation"
                 ))
+
+    updateTree!(_KJ["tree"],"goto";
+                action=GUIgoto!)
 
     Gtk4.GLib.G_.set_prgname("KJ")
 
