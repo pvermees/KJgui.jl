@@ -8,11 +8,11 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    linecol="black",linestyle=:solid,
                    i=nothing,legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     Sanchors = getAnchors(method,standards,false)
     Ganchors = getAnchors(method,glass,true)
     anchors = merge(Sanchors,Ganchors)
@@ -33,11 +33,11 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    linecol="black",linestyle=:solid,i=nothing,
                    legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     return MakiePlot(samp,method,channels,blank,pars,
                      collect(keys(standards)),collect(keys(glass));
                      num=num,den=den,transformation=transformation,
@@ -52,11 +52,11 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,offset=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    display=true,i=nothing,
                    legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     return MakiePlot(samp,collect(values(channels));
                      num=num,den=den,transformation=transformation,
                      offset=offset,seriestype=seriestype,
@@ -68,11 +68,11 @@ function MakiePlot(samp::Sample;
                    num=nothing,den=nothing,
                    transformation=nothing,offset=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    display=true,i=nothing,
                    legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     return MakiePlot(samp,getChannels(samp);
                   num=num,den=den,transformation=transformation,
                   offset=offset,seriestype=seriestype,
@@ -90,14 +90,14 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,
+                   ms=5,ma=1,
                    xlim=:auto,ylim=:auto,
                    linecol="black",
                    linestyle=:solid,
                    i=nothing,
                    legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     if samp.group == "sample"
 
         p = MakiePlot(samp,channels;
@@ -134,9 +134,9 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    linecol="black",linestyle=:solid,i=nothing,
-                   legend=:topleft,show_title=true,titlefontsize=10)
+                   legend=:topleft,show_title=true,titlefontsize=14)
     if samp.group == "sample"
 
         p = MakiePlot(samp;
@@ -171,9 +171,9 @@ function MakiePlot(samp::Sample,
                    num=nothing,den=nothing,
                    transformation=nothing,
                    seriestype=:scatter,
-                   ms=2,ma=0.5,xlim=:auto,ylim=:auto,
+                   ms=5,ma=1,xlim=:auto,ylim=:auto,
                    linecol="black",linestyle=:solid,i=nothing,
-                   legend=:topleft,show_title=true,titlefontsize=10)
+                   legend=:topleft,show_title=true,titlefontsize=14)
     elements = channels2elements(samp)
     return MakiePlot(samp,blank,pars,elements,internal;
                      num=num,den=den,transformation=transformation,
@@ -186,12 +186,12 @@ function MakiePlot(samp::Sample,
                    channels::AbstractVector;
                    num=nothing,den=nothing,
                    transformation=nothing,offset=nothing,
-                   seriestype=:scatter,ms=2,ma=0.5,
+                   seriestype=:scatter,ms=5,ma=1,
                    xlim=:auto,ylim=:auto,
                    i::Union{Nothing,Integer}=nothing,
                    legend=:topleft,
                    show_title=true,
-                   titlefontsize=10)
+                   titlefontsize=14)
     xlab = names(samp.dat)[1]
     x = samp.dat[:,xlab]
     meas = samp.dat[:,channels]
@@ -203,13 +203,47 @@ function MakiePlot(samp::Sample,
     ratsig = isnothing(den) ? "signal" : "ratio"
     ylab = isnothing(transformation) ? ratsig : transformation*"("*ratsig*")"
 
-    n_cols = size(ty,2)
     p = Figure()
-    ax = Axis(p[1, 1])
-    for i in 1:n_cols
-        scatter!(ax, x,ty[:,i])
+    if show_title
+        title = samp.sname * " [" * samp.group * "]"
+        if !isnothing(i)
+            title = string(i) * ". " * title
+        end
+        ax = Axis(p[1,1];xlabel=xlab,title=title,titlesize=titlefontsize)
+    else
+        ax = Axis(p[1,1];xlabel=xlab)
     end
-    
+    n_cols = size(ty,2)
+    if seriestype == :scatter
+        for i in 1:n_cols
+            scatter!(ax, x, ty[:,i];
+                     markersize=ms, strokewidth=ma, label=names(ty))
+        end
+    else
+        for i in 1:n_cols
+            lines!(ax, x, ty[:,i]; linewidth=ms, label=names(ty))
+        end
+    end
+    if xlim != :auto
+        xlimits!(ax, xlim)
+    end
+    if ylim != :auto
+        ylimits!(ax, ylim)
+    end
+    reset_limits!(ax)
+    ylims = collect(ax.yaxis.attributes.limits.val)
+    if !isnothing(samp.t0)
+        lines!(ax, [samp.t0, samp.t0], ylims;
+               color=:gray, linestyle=:dash, label="")
+    end
+    for win in [samp.bwin, samp.swin]
+        for w in win
+            xm, xM = x[w[1]], x[w[2]]
+            ym, yM = ylims[1], ylims[2]
+            poly!(ax, [xm, xm, xM, xM, xm], [ym, yM, yM, ym, ym];
+                  color=:transparent, strokewidth=1.0, linestyle=:dot)
+        end
+    end
     return p
 end
 
