@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.6"
+julia_version = "1.10.7"
 manifest_format = "2.0"
-project_hash = "d2ad82b0bbccb0df6c04237a48b78d7ae290dcb8"
+project_hash = "330bcdc94cf8e188f81f99f87ea95553472bd519"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -815,11 +815,11 @@ version = "3.0.4+0"
 
 [[deps.KJ]]
 deps = ["CSV", "DataFrames", "Dates", "Infiltrator", "LinearAlgebra", "Optim", "Plots", "Printf", "Statistics"]
-git-tree-sha1 = "5aafbb2ebdbc5f32c40d3bde2f839b4145d81cfe"
+git-tree-sha1 = "a3f50545e4b241abcab36a16f6f0fe9164408415"
 repo-rev = "main"
 repo-url = "https://github.com/pvermees/KJ.jl.git"
 uuid = "c976074e-2e5b-4ac6-9301-394412a2f0b0"
-version = "0.0.1"
+version = "0.0.2"
 
 [[deps.KernelDensity]]
 deps = ["Distributions", "DocStringExtensions", "FFTW", "Interpolations", "StatsBase"]

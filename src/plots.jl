@@ -1,30 +1,46 @@
-function MakiePlot()
-    fig = Figure()
-    ax = Axis(fig[1, 1])
-    fig[2, 1] = buttongrid = GridLayout(tellwidth = false)
-    counts = Observable([1, 4, 3, 7, 2])
-    buttonlabels = [lift(x -> "Count: $(x[i])", counts) for i in 1:5]
-    buttons = buttongrid[1, 1:5] = [Button(fig, label = l) for l in buttonlabels]
-    for i in 1:5
-        on(buttons[i].clicks) do n
-            counts[][i] += 1
-            notify(counts)
-        end
-    end
-    barplot!(counts, color = cgrad(:Spectral)[LinRange(0, 1, 5)])
-    ylims!(ax, 0, 20)
-    return fig
-end
-export MakiePlot
-
 function GUIviewer!(ctrl::AbstractDict)
     GUIplotter(ctrl)
     return "view"
 end
 
 function GUIplotter(ctrl::AbstractDict)
-    fig = MakiePlot()
+    samp = ctrl["run"][ctrl["i"]]
+    if ctrl["method"] == "concentrations"
+        fig = GUIconcentrationPlotter(ctrl,samp)
+    else
+        fig = GUIgeochronPlotter(ctrl,samp)
+    end
+    if !isnothing(ctrl["PAcutoff"])
+        GUIaddPAline!(p,ctrl["PAcutoff"])
+    end
     display(fig)
+    return nothing
+end
+
+function GUIconcentrationPlotter(ctrl::AbstractDict,samp::Sample)
+    if (samp.group in keys(ctrl["glass"])) & !isnothing(ctrl["blank"])
+        fig = MakiePlot(samp,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
+                        den=ctrl["den"],transformation=ctrl["transformation"],
+                        i=ctrl["i"])
+    else
+        fig = MakiePlot(samp;den=ctrl["den"],
+                        transformation=ctrl["transformation"],
+                        i=ctrl["i"])
+    end
+    return fig
+end
+
+function GUIgeochronPlotter(ctrl::AbstractDict,samp::Sample)
+    if isnothing(ctrl["blank"]) | (samp.group=="sample")
+        fig = MakiePlot(samp,ctrl["channels"];
+                        den=ctrl["den"],transformation=ctrl["transformation"],i=ctrl["i"])
+    else
+        anchors = KJ.getAnchors(ctrl["method"],ctrl["standards"],ctrl["glass"])
+        fig = MakiePlot(samp,ctrl["method"],ctrl["channels"],ctrl["blank"],
+                        ctrl["par"],ctrl["standards"],ctrl["glass"];
+                        den=ctrl["den"],transformation=ctrl["transformation"],i=ctrl["i"])
+    end
+    return fig
 end
 
 function GUInext!(ctrl::AbstractDict)
