@@ -17,6 +17,16 @@ function MakiePlot()
 end
 export MakiePlot
 
+function GUIviewer!(ctrl::AbstractDict)
+    GUIplotter(ctrl)
+    return "view"
+end
+
+function GUIplotter(ctrl::AbstractDict)
+    fig = MakiePlot()
+    display(fig)
+end
+
 function GUInext!(ctrl::AbstractDict)
     ctrl["i"] += 1
     if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end

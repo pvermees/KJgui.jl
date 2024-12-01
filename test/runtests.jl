@@ -10,5 +10,10 @@ function MakieTest()
     display(fig)
 end
 
-@testset "Extension test" begin ExtensionTest() end
-@testset "Makie test" begin MakieTest() end
+function PlotTest()
+    KJ.TUI(KJgui,logbook="plot.log")
+end
+
+#@testset "Extension test" begin ExtensionTest() end
+#@testset "Makie test" begin MakieTest() end
+@testset "Plot test" begin PlotTest() end

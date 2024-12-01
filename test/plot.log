@@ -1,0 +1,8 @@
+task,action
+top,r
+instrument,a
+dir|file,d
+loadICPdir,apatite
+top,m
+method,3
+columns,"9,4,5"
