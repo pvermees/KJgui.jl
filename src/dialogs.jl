@@ -57,6 +57,21 @@ function GUIimportLog!(ctrl::AbstractDict)
     end
     return nothing
 end
+function GUIimportLog!(ctrl::AbstractDict,
+                       response::AbstractString)
+    KJ.TUIclear!(ctrl)
+    ctrl["log"] = true
+    history = CSV.read(response,DataFrame)
+    for row in eachrow(history)
+        try
+            KJ.dispatch!(ctrl;key=row[1],response=row[2])
+        catch e
+            println(e)
+        end
+    end
+    ctrl["log"] = false
+    return nothing
+end
 export GUIimportLog!
 
 function GUIexportLog(ctrl::AbstractDict)

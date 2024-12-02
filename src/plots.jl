@@ -82,3 +82,6 @@ function GUIgoto!(ctrl::AbstractDict,
     GUIplotter(ctrl)
     return "x"
 end
+
+function adjustable_rectangle(w)
+end
