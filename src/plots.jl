@@ -9,6 +9,7 @@ function GUIplotter(ctrl::AbstractDict)
     prev = Button(fig, label = "<")
     next = Button(fig, label = ">")
     ctrl["ax"] = Axis(fig)
+    Makie.deactivate_interaction!(ctrl["ax"], :rectanglezoom)
     GUIplotter!(ctrl)
     on(prev.clicks) do _
         GUIprevious!(ctrl)
@@ -107,7 +108,4 @@ function GUIclear!(ctrl::AbstractDict)
         delete!(ctrl["legend"])
     end
     empty!(ctrl["ax"])
-end
-
-function adjustable_rectangle(w)
 end

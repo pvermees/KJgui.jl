@@ -235,17 +235,41 @@ function MakiePlot!(ax::Axis,
         lines!(ax, [samp.t0, samp.t0], ylims;
                color=:gray, linestyle=:dash)
     end
-    for win in [samp.bwin, samp.swin]
-        for w in win
-            xm, xM = x[w[1]], x[w[2]]
-            ym, yM = ylims[1], ylims[2]
-            poly!(ax, [xm, xm, xM, xM, xm], [ym, yM, yM, ym, ym];
-                  color=:transparent, strokewidth=1.0, linestyle=:dot)
-        end
+    bwin = draw_windows(ax,samp.bwin,x,ylims)
+    swin = draw_windows(ax,samp.swin,x,ylims)
+    spoint = select_point(ax.scene, marker = :circle)
+    on(spoint) do xy
+        update_windows!(ax,samp,bwin,swin,x,ylims,xy)
     end
 
 end
 export MakiePlot!
+
+function draw_windows(ax::Axis,
+                      win::AbstractVector,
+                      x::AbstractVector,
+                      ylims::AbstractVector)
+    out = []
+    for w in win
+        xy = Observable(Point2f[])
+        xm, xM = x[w[1]], x[w[2]]
+        ym, yM = ylims[1], ylims[2]
+        xy[] = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
+        poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
+        push!(out,xy)
+    end
+    return out
+end
+
+function update_windows!(ax::Axis,
+                         samp::Sample,
+                         bwin::AbstractVector,
+                         swin::AbstractVector,
+                         x::AbstractVector,
+                         ylims::AbstractVector,
+                         xy::AbstractVector)
+    println(xy)
+end
 
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
