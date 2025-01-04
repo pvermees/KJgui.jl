@@ -10,7 +10,6 @@ function GUIplotter(ctrl::AbstractDict)
     next = Button(fig, label = ">")
     ctrl["ax"] = Axis(fig)
     GUIplotter!(ctrl)
-    axislegend(ctrl["ax"];position=:lt)
     on(prev.clicks) do _
         GUIprevious!(ctrl)
     end
@@ -24,12 +23,14 @@ function GUIplotter(ctrl::AbstractDict)
 end
 
 function GUIplotter!(ctrl::AbstractDict)
+    GUIclear!(ctrl)
     samp = ctrl["run"][ctrl["i"]]
     if ctrl["method"] == "concentrations"
         GUIconcentrationPlotter!(ctrl,samp)
     else
         GUIgeochronPlotter!(ctrl,samp)
     end
+    ctrl["legend"] = axislegend(ctrl["ax"];position=:lt)
     if !isnothing(ctrl["PAcutoff"])
         GUIaddPAline!(ctrl["PAcutoff"])
     end
@@ -60,14 +61,12 @@ function GUIgeochronPlotter!(ctrl::AbstractDict,samp::Sample)
 end
 
 function GUInext!(ctrl::AbstractDict)
-    empty!(ctrl["ax"])
     ctrl["i"] += 1
     if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
     return GUIplotter!(ctrl)
 end
 
 function GUIprevious!(ctrl::AbstractDict)
-    empty!(ctrl["ax"])
     ctrl["i"] -= 1
     if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
     return GUIplotter!(ctrl)
@@ -75,12 +74,39 @@ end
 
 function GUIgoto!(ctrl::AbstractDict,
                   response::AbstractString)
-    empty!(ctrl["ax"])
     ctrl["i"] = parse(Int,response)
     if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
     if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
     GUIplotter(ctrl)
     return "x"
+end
+
+function GUIratios!(ctrl::AbstractDict,
+                    response::AbstractString)
+    if response=="n"
+        ctrl["den"] = nothing
+    elseif response=="x"
+        return "xx"
+    else
+        i = parse(Int,response)
+        if isa(ctrl["channels"],AbstractVector)
+            channels = ctrl["channels"]
+        elseif isa(ctrl["channels"],AbstractDict)
+            channels = collect(values(ctrl["channels"]))
+        else
+            channels = getChannels(ctrl["run"])
+        end
+        ctrl["den"] = channels[i]
+    end
+    GUIplotter!(ctrl)
+    return "x"
+end
+
+function GUIclear!(ctrl::AbstractDict)
+    if "legend" in keys(ctrl)
+        delete!(ctrl["legend"])
+    end
+    empty!(ctrl["ax"])
 end
 
 function adjustable_rectangle(w)

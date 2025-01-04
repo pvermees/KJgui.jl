@@ -193,7 +193,7 @@ function MakiePlot!(ax::Axis,
     xlab = names(samp.dat)[1]
     x = samp.dat[:,xlab]
     meas = samp.dat[:,channels]
-    y = (isnothing(num) && isnothing(den)) ? meas : formRatios(meas,num,den)
+    y = (isnothing(num) && isnothing(den)) ? meas : KJ.formRatios(meas,num,den)
     if isnothing(offset)
         offset = Dict(zip(names(y),fill(0.0,size(y,2))))
     end
@@ -204,16 +204,15 @@ function MakiePlot!(ax::Axis,
     ax.xlabel = xlab
     ax.tellheight = false
     n_cols = size(ty,2)
-    if seriestype == :scatter
-        Random.seed!(4)
-        for i in 1:n_cols
-            sc = scatter!(ax, x, ty[:,i];
+    Random.seed!(4)
+    for i in 1:n_cols
+        good = isfinite.(ty[:,i])
+        if seriestype == :scatter
+            sc = scatter!(ax, x[good], ty[good,i];
                           color = RGBf(rand(3)...),
                           markersize=ms, strokewidth=ma, label=names(ty)[i])
-        end
-    else
-        for i in 1:n_cols
-            lines!(ax, x, ty[:,i]; linewidth=ms)
+        else
+            lines!(ax, x[good], ty[good,i]; linewidth=ms)
         end
     end
     if xlim != :auto
