@@ -229,6 +229,14 @@ function MakiePlot!(ax::Axis,
         ax.title = title
         ax.titlesize = titlefontsize
     end
+    interactive_windows(ax,samp,x)
+    
+end
+export MakiePlot!
+
+function interactive_windows(ax::Axis,
+                             samp::Sample,
+                             x::AbstractVector)
     reset_limits!(ax)
     ylims = collect(ax.yaxis.attributes.limits.val)
     if !isnothing(samp.t0)
@@ -237,13 +245,22 @@ function MakiePlot!(ax::Axis,
     end
     bwin = draw_windows(ax,samp.bwin,x,ylims)
     swin = draw_windows(ax,samp.swin,x,ylims)
-    spoint = select_point(ax.scene, marker = :circle)
-    on(spoint) do xy
-        update_windows!(ax,samp,bwin,swin,x,ylims,xy)
+    xy1 = []
+    on(events(ax.scene).mousebutton) do event
+        if event.button == Mouse.left && event.action == Mouse.press
+            xy1 = events(ax.scene).mouseposition[]
+            print("start:")
+            println(xy1)
+        end
     end
-
+    on(events(ax.scene).mouseposition) do xy2
+        mb = events(ax.scene).mousebutton[]
+        if mb.button == Mouse.left && (mb.action == Mouse.press || mb.action == Mouse.repeat)
+            print("end:")
+            println(xy2)
+        end
+    end
 end
-export MakiePlot!
 
 function draw_windows(ax::Axis,
                       win::AbstractVector,
@@ -259,16 +276,6 @@ function draw_windows(ax::Axis,
         push!(out,xy)
     end
     return out
-end
-
-function update_windows!(ax::Axis,
-                         samp::Sample,
-                         bwin::AbstractVector,
-                         swin::AbstractVector,
-                         x::AbstractVector,
-                         ylims::AbstractVector,
-                         xy::AbstractVector)
-    println(xy)
 end
 
 function MakiePlotFitted!(ax::Axis,
