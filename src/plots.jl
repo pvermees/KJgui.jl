@@ -52,12 +52,16 @@ end
 function GUIgeochronPlotter!(ctrl::AbstractDict,samp::Sample)
     if isnothing(ctrl["blank"]) | (samp.group=="sample")
         MakiePlot!(ctrl["ax"],samp,ctrl["channels"];
-                   den=ctrl["den"],transformation=ctrl["transformation"],i=ctrl["i"])
+                   den=ctrl["den"],
+                   transformation=ctrl["transformation"],
+                   i=ctrl["i"])
     else
         anchors = KJ.getAnchors(ctrl["method"],ctrl["standards"],ctrl["glass"])
         MakiePlot!(ctrl["ax"],samp,ctrl["method"],ctrl["channels"],ctrl["blank"],
                    ctrl["par"],ctrl["standards"],ctrl["glass"];
-                   den=ctrl["den"],transformation=ctrl["transformation"],i=ctrl["i"])
+                   den=ctrl["den"],
+                   transformation=ctrl["transformation"],
+                   i=ctrl["i"])
     end
 end
 
@@ -101,6 +105,18 @@ function GUIratios!(ctrl::AbstractDict,
     end
     GUIplotter!(ctrl)
     return "x"
+end
+
+function GUIoneAutoWindow!(ctrl::AbstractDict)
+    setBwin!(ctrl["run"][ctrl["i"]])
+    setSwin!(ctrl["run"][ctrl["i"]])
+    return GUIplotter!(ctrl)
+end
+
+function GUIallAutoWindow!(ctrl::AbstractDict)
+    setBwin!(ctrl["run"])
+    setSwin!(ctrl["run"])
+    return GUIplotter!(ctrl)
 end
 
 function GUIclear!(ctrl::AbstractDict)
