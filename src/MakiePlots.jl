@@ -244,69 +244,79 @@ function interactive_windows(ax::Axis,
         lines!(ax, [samp.t0, samp.t0], ylims;
                color=:gray, linestyle=:dash)
     end
-    bwin = draw_windows(ax,samp.bwin,x,ylims)
-    swin = draw_windows(ax,samp.swin,x,ylims)
     if :select_window in keys(interactions(ax))
         Makie.deregister_interaction!(ax, :select_window)
     end
-    add_listener!(ax,bwin,swin,ylims)
+    add_listener!(ax,samp,x,ylims)
 end
 
-function add_listener!(ax,bwin,swin,ylims)
+function add_listener!(ax,samp,x,ylims)
+    windows = draw_windows(ax,samp,x,ylims)
     xy1 = []
     xy2 = []
-    win = nothing
+    i = 1
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             xy1 = event.data
-            win = nearest_window(xy1,bwin,swin)
+            i = nearest_window(xy1,windows)
         end
         if event.type === MouseEventTypes.leftdrag
             xy2 = event.data
             xm = minimum([xy1[1],xy2[1]])
             xM = maximum([xy1[1],xy2[1]])
-            win.val = [[xm,ylims[1]],[xm,ylims[2]],
-                       [xM,ylims[2]],[xM,ylims[1]],
-                       [xm,ylims[1]]]
-            notify(win)
+            windows[i].val = [[xm,ylims[1]],[xm,ylims[2]],
+                              [xM,ylims[2]],[xM,ylims[1]],
+                              [xm,ylims[1]]]
+            update_windows!(samp,i,xm,xM)
+            notify(windows[i])
         end
     end
 end
 
 function draw_windows(ax::Axis,
-                      win::AbstractVector,
+                      samp::Sample,
                       x::AbstractVector,
                       ylims::AbstractVector)
     out = []
-    for w in win
-        xy = Observable(Point2f[])
-        xm, xM = x[w[1]], x[w[2]]
-        ym, yM = ylims[1], ylims[2]
-        xy[] = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
-        poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
-        push!(out,xy)
+    for win in [samp.bwin,samp.swin]
+        for w in win
+            xy = Observable(Point2f[])
+            xm, xM = x[w[1]], x[w[2]]
+            ym, yM = ylims[1], ylims[2]
+            xy[] = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
+            poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
+            push!(out,xy)
+        end
     end
     return out
 end
 
 function nearest_window(xy1::AbstractVector,
-                        bwin::AbstractVector,
-                        swin::AbstractVector)
+                        windows::AbstractVector)
     mindist = Inf
-    windows = [bwin,swin]
-    toupdate = bwin[1]
+    toupdate = 1
     for i in eachindex(windows)
-        for j in eachindex(windows[i])
-            for xy in windows[i][j].val
-                dist = abs(xy[1]-xy1[1])
-                if dist<mindist
-                    mindist = dist
-                    toupdate = windows[i][j]
-                end
+        for xy in windows[i].val
+            dist = abs(xy[1]-xy1[1])
+            if dist<mindist
+                mindist = dist
+                toupdate = i
             end
         end
     end
     return toupdate
+end
+
+function update_windows!(samp::Sample,
+                         i::Integer,
+                         xm::Number,
+                         xM::Number)
+    nbwin = length(samp.bwin)
+    if i>nbwin
+        setSwin!(samp,[(xm,xM)];seconds=true)
+    else
+        setBwin!(samp,[(xm,xM)];seconds=true)
+    end
 end
 
 function MakiePlotFitted!(ax::Axis,
