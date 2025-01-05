@@ -70,7 +70,6 @@ function extend!(_KJ::AbstractDict)
                 "   drag    : Manually set a one-part window (this sample)\n" *
                 "   a + drag: Manually set a one-part window (all samples)\n" *
                 "   m + drag: Manually set a multi-part window (this sample)\n" * 
-                "   M + drag: Manually set a multi-part window (all samples)\n" * 
                 "?: Help",
                 help =
                 "Specify the blank and signal windows by dragging a rectangle " *

@@ -248,31 +248,33 @@ function interactive_windows(ctrl::AbstractDict,
     if :select_window in keys(interactions(ax))
         Makie.deregister_interaction!(ax, :select_window)
     end
-    add_listener!(ctrl,x,ylims)
+    add_listener!(ctrl,x,ylims[1],ylims[2])
 end
 
-function add_listener!(ctrl,x,ylims)
+function add_listener!(ctrl::AbstractDict,
+                       x::AbstractVector,
+                       ym::AbstractFloat,
+                       yM::AbstractFloat)
     ax = ctrl["ax"]
     samp = ctrl["run"][ctrl["i"]]
-    bwin = draw_windows(ax,samp.bwin,x,ylims)
-    swin = draw_windows(ax,samp.swin,x,ylims)
+    bwin = draw_windows(ax,samp.bwin,x,ym,yM)
+    swin = draw_windows(ax,samp.swin,x,ym,yM)
     blank = false
-    win = nothing
     x1,x2,xm,xM = [0.0,0.0,0.0,0.0]
+    observer = nothing
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
             blank = x1 < samp.t0
             win = blank ? bwin : swin
-            win = first(win,1)
+            observer = win[1]
         end
         if event.type === MouseEventTypes.leftdrag
             x2 = event.data[1]
             xm = minimum([x1,x2])
             xM = maximum([x1,x2])
-            win[1].val = [[xm,ylims[1]],[xm,ylims[2]],
-                          [xM,ylims[2]],[xM,ylims[1]],[xm,ylims[1]]]
-            notify(win[1])
+            observer.val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
+            notify(observer)
         end
         if event.type === MouseEventTypes.leftdragstop
             obj = ispressed(ax,Keyboard.a) ? ctrl["run"] : samp
@@ -288,21 +290,22 @@ end
 function draw_windows(ax::Axis,
                       win::AbstractVector,
                       x::AbstractVector,
-                      ylims::AbstractVector)
+                      ym::AbstractFloat,
+                      yM::AbstractFloat)
     out = []
     for w in win
-        xy = draw_window(ax,w,x,ylims)
+        xm, xM = x[w[1]], x[w[2]]
+        xy = draw_window(ax,xm,xM,ym,yM)
         push!(out,xy)
     end
     return out
 end
 function draw_window(ax::Axis,
-                     w::Tuple,
-                     x::AbstractVector,
-                     ylims::AbstractVector)
+                     xm::AbstractFloat,
+                     xM::AbstractFloat,
+                     ym::AbstractFloat,
+                     yM::AbstractFloat)
     xy = Observable(Point2f[])
-    xm, xM = x[w[1]], x[w[2]]
-    ym, yM = ylims[1], ylims[2]
     xy[] = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
     poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
     return xy
