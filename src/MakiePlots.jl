@@ -246,6 +246,13 @@ function interactive_windows(ax::Axis,
     end
     bwin = draw_windows(ax,samp.bwin,x,ylims)
     swin = draw_windows(ax,samp.swin,x,ylims)
+    if :select_window in keys(interactions(ax))
+        Makie.deregister_interaction!(ax, :select_window)
+    end
+    add_listener!(ax,bwin,swin,ylims)
+end
+
+function add_listener!(ax,bwin,swin,ylims)
     xy1 = []
     xy2 = []
     win = nothing
@@ -258,12 +265,10 @@ function interactive_windows(ax::Axis,
             xy2 = event.data
             xm = minimum([xy1[1],xy2[1]])
             xM = maximum([xy1[1],xy2[1]])
-            ym = minimum([xy1[2],xy2[2]])
-            yM = maximum([xy1[2],xy2[2]])
-            win.val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
-        end
-        if event.type === MouseEventTypes.leftdragstop
-            println("Stopped at $(event.data)")
+            win.val = [[xm,ylims[1]],[xm,ylims[2]],
+                       [xM,ylims[2]],[xM,ylims[1]],
+                       [xm,ylims[1]]]
+            notify(win)
         end
     end
 end
