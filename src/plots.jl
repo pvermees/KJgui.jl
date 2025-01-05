@@ -25,11 +25,10 @@ end
 
 function GUIplotter!(ctrl::AbstractDict)
     GUIclear!(ctrl)
-    samp = ctrl["run"][ctrl["i"]]
     if ctrl["method"] == "concentrations"
-        GUIconcentrationPlotter!(ctrl,samp)
+        GUIconcentrationPlotter!(ctrl)
     else
-        GUIgeochronPlotter!(ctrl,samp)
+        GUIgeochronPlotter!(ctrl)
     end
     ctrl["legend"] = axislegend(ctrl["ax"];position=:lt)
     if !isnothing(ctrl["PAcutoff"])
@@ -37,27 +36,29 @@ function GUIplotter!(ctrl::AbstractDict)
     end
 end
 
-function GUIconcentrationPlotter!(ctrl::AbstractDict,samp::Sample)
+function GUIconcentrationPlotter!(ctrl::AbstractDict)
+    samp = ctrl["run"][ctrl["i"]]
     if (samp.group in keys(ctrl["glass"])) & !isnothing(ctrl["blank"])
-        MakiePlot!(ctrl["ax"],samp,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
+        MakiePlot!(ctrl,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
                    den=ctrl["den"],transformation=ctrl["transformation"],
                    i=ctrl["i"])
     else
-        MakiePlot!(ctrl["ax"],samp;den=ctrl["den"],
+        MakiePlot!(ctrl;den=ctrl["den"],
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
     end
 end
 
-function GUIgeochronPlotter!(ctrl::AbstractDict,samp::Sample)
+function GUIgeochronPlotter!(ctrl::AbstractDict)
+    samp = ctrl["run"][ctrl["i"]]
     if isnothing(ctrl["blank"]) | (samp.group=="sample")
-        MakiePlot!(ctrl["ax"],samp,ctrl["channels"];
+        MakiePlot!(ctrl,ctrl["channels"];
                    den=ctrl["den"],
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
     else
         anchors = KJ.getAnchors(ctrl["method"],ctrl["standards"],ctrl["glass"])
-        MakiePlot!(ctrl["ax"],samp,ctrl["method"],ctrl["channels"],ctrl["blank"],
+        MakiePlot!(ctrl,ctrl["method"],ctrl["channels"],ctrl["blank"],
                    ctrl["par"],ctrl["standards"],ctrl["glass"];
                    den=ctrl["den"],
                    transformation=ctrl["transformation"],
@@ -117,6 +118,19 @@ function GUIallAutoWindow!(ctrl::AbstractDict)
     setBwin!(ctrl["run"])
     setSwin!(ctrl["run"])
     return GUIplotter!(ctrl)
+end
+
+function GUItransformation!(ctrl::AbstractDict,
+                            response::AbstractString)
+    if response=="L"
+        ctrl["transformation"] = "log"
+    elseif response=="s"
+        ctrl["transformation"] = "sqrt"
+    else
+        ctrl["transformation"] = nothing
+    end
+    GUIplotter!(ctrl)
+    return "x"
 end
 
 function GUIclear!(ctrl::AbstractDict)

@@ -68,7 +68,7 @@ function extend!(_KJ::AbstractDict)
                 "x: Exit this menu and use the mouse to select your windows " *
                 "on the time resolved signal plot:\n" *
                 "   drag    : Manually set a one-part window (this sample)\n" *
-                "   s + drag: Manually set a one-part window (all samples)\n" *
+                "   a + drag: Manually set a one-part window (all samples)\n" *
                 "   m + drag: Manually set a multi-part window (this sample)\n" * 
                 "   M + drag: Manually set a multi-part window (all samples)\n" * 
                 "?: Help",
@@ -82,6 +82,9 @@ function extend!(_KJ::AbstractDict)
                     "a" => GUIoneAutoWindow!,
                     "A" => GUIallAutoWindow!
                 ))
+
+    updateTree!(_KJ["tree"],"transformation";
+                action=GUItransformation!)
     
     Gtk4.GLib.G_.set_prgname("KJ")
 
