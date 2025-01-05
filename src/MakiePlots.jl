@@ -230,14 +230,15 @@ function MakiePlot!(ctrl::AbstractDict,
         ax.title = title
         ax.titlesize = titlefontsize
     end
-    interactive_windows(ax,samp,x)
+    interactive_windows(ctrl,x)
     
 end
 export MakiePlot!
 
-function interactive_windows(ax::Axis,
-                             samp::Sample,
+function interactive_windows(ctrl::AbstractDict,
                              x::AbstractVector)
+    samp = ctrl["run"][ctrl["i"]]
+    ax = ctrl["ax"]
     reset_limits!(ax)
     ylims = collect(ax.yaxis.attributes.limits.val)
     if !isnothing(samp.t0)
@@ -247,10 +248,12 @@ function interactive_windows(ax::Axis,
     if :select_window in keys(interactions(ax))
         Makie.deregister_interaction!(ax, :select_window)
     end
-    add_listener!(ax,samp,x,ylims)
+    add_listener!(ctrl,x,ylims)
 end
 
-function add_listener!(ax,samp,x,ylims)
+function add_listener!(ctrl,x,ylims)
+    ax = ctrl["ax"]
+    samp = ctrl["run"][ctrl["i"]]
     bwin = draw_windows(ax,samp.bwin,x,ylims)
     swin = draw_windows(ax,samp.swin,x,ylims)
     blank = false
@@ -272,10 +275,11 @@ function add_listener!(ax,samp,x,ylims)
             notify(win[1])
         end
         if event.type === MouseEventTypes.leftdragstop
+            obj = ispressed(ax,Keyboard.a) ? ctrl["run"] : samp
             if blank
-                setBwin!(samp,[(xm,xM)];seconds=true)
+                setBwin!(obj,[(xm,xM)];seconds=true)
             else
-                setSwin!(samp,[(xm,xM)];seconds=true)
+                setSwin!(obj,[(xm,xM)];seconds=true)
             end
         end
     end
