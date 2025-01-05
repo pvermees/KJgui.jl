@@ -202,6 +202,7 @@ function MakiePlot!(ax::Axis,
     ylab = isnothing(transformation) ? ratsig : transformation*"("*ratsig*")"
 
     ax.xlabel = xlab
+    ax.ylabel = ylab
     ax.tellheight = false
     n_cols = size(ty,2)
     Random.seed!(4)
@@ -246,18 +247,23 @@ function interactive_windows(ax::Axis,
     bwin = draw_windows(ax,samp.bwin,x,ylims)
     swin = draw_windows(ax,samp.swin,x,ylims)
     xy1 = []
-    on(events(ax.scene).mousebutton) do event
-        if event.button == Mouse.left && event.action == Mouse.press
-            xy1 = events(ax.scene).mouseposition[]
-            print("start:")
-            println(xy1)
+    xy2 = []
+    win = nothing
+    register_interaction!(ax,:select_window) do event::MouseEvent, axis
+        if event.type === MouseEventTypes.leftdragstart
+            xy1 = event.data
+            win = nearest_window(xy1,bwin,swin)
         end
-    end
-    on(events(ax.scene).mouseposition) do xy2
-        mb = events(ax.scene).mousebutton[]
-        if mb.button == Mouse.left && (mb.action == Mouse.press || mb.action == Mouse.repeat)
-            print("end:")
-            println(xy2)
+        if event.type === MouseEventTypes.leftdrag
+            xy2 = event.data
+            xm = minimum([xy1[1],xy2[1]])
+            xM = maximum([xy1[1],xy2[1]])
+            ym = minimum([xy1[2],xy2[2]])
+            yM = maximum([xy1[2],xy2[2]])
+            win.val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
+        end
+        if event.type === MouseEventTypes.leftdragstop
+            println("Stopped at $(event.data)")
         end
     end
 end
@@ -276,6 +282,26 @@ function draw_windows(ax::Axis,
         push!(out,xy)
     end
     return out
+end
+
+function nearest_window(xy1::AbstractVector,
+                        bwin::AbstractVector,
+                        swin::AbstractVector)
+    mindist = Inf
+    windows = [bwin,swin]
+    toupdate = bwin[1]
+    for i in eachindex(windows)
+        for j in eachindex(windows[i])
+            for xy in windows[i][j].val
+                dist = abs(xy[1]-xy1[1])
+                if dist<mindist
+                    mindist = dist
+                    toupdate = windows[i][j]
+                end
+            end
+        end
+    end
+    return toupdate
 end
 
 function MakiePlotFitted!(ax::Axis,
