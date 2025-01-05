@@ -262,6 +262,7 @@ function add_listener!(ctrl::AbstractDict,
     blank = false
     x1,x2,xm,xM = [0.0,0.0,0.0,0.0]
     observer = nothing
+    windows = []
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
@@ -277,11 +278,12 @@ function add_listener!(ctrl::AbstractDict,
             notify(observer)
         end
         if event.type === MouseEventTypes.leftdragstop
+            push!(windows,(xm,xM))
             obj = ispressed(ax,Keyboard.a) ? ctrl["run"] : samp
             if blank
-                setBwin!(obj,[(xm,xM)];seconds=true)
+                setBwin!(obj,windows;seconds=true)
             else
-                setSwin!(obj,[(xm,xM)];seconds=true)
+                setSwin!(obj,windows;seconds=true)
             end
         end
     end
