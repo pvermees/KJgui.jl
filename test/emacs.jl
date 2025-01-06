@@ -10,4 +10,4 @@ end
 
 rerun = true
 
-KJ.TUI(KJgui,logbook="plot.log")
+KJ.TUI(KJgui)#,logbook="plot.log")

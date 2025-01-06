@@ -4,11 +4,11 @@ function GUIviewer!(ctrl::AbstractDict)
 end
 
 function GUIplotter(ctrl::AbstractDict)
-    fig = Figure()
-    grid = fig[1,1] = GridLayout()
-    prev = Button(fig, label = "<")
-    next = Button(fig, label = ">")
-    ctrl["ax"] = Axis(fig)
+    ctrl["fig"] = Figure()
+    grid = ctrl["fig"][1,1] = GridLayout()
+    prev = Button(ctrl["fig"], label = "<")
+    next = Button(ctrl["fig"], label = ">")
+    ctrl["ax"] = Axis(ctrl["fig"])
     Makie.deactivate_interaction!(ctrl["ax"], :rectanglezoom)
     GUIplotter!(ctrl)
     on(prev.clicks) do _
@@ -20,7 +20,7 @@ function GUIplotter(ctrl::AbstractDict)
     grid[1:2, 1] = prev
     grid[1:2, 2] = ctrl["ax"]
     grid[1:2, 3] = next
-    display(fig)
+    display(ctrl["fig"])
 end
 
 function GUIplotter!(ctrl::AbstractDict)

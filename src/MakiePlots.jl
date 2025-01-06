@@ -105,8 +105,8 @@ function MakiePlot!(ctrl::AbstractDict,
                    titlefontsize=titlefontsize)
         
     else
-
-        offset = getOffset(samp,channels,blank,pars,anchors,transformation;
+        
+        offset = getOffset(samp,ctrl["dwell"],channels,blank,pars,anchors,transformation;
                            num=num,den=den)
 
         MakiePlot!(ctrl,channels;
@@ -115,7 +115,7 @@ function MakiePlot!(ctrl::AbstractDict,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
+        MakiePlotFitted!(ctrl["ax"],samp,ctrl["dwell"],blank,pars,channels,anchors;
                          num=num,den=den,transformation=transformation,
                          offset=offset,linecolor=linecol,linestyle=linestyle)
         
@@ -146,7 +146,7 @@ function MakiePlot!(ctrl::AbstractDict,
                    titlefontsize=titlefontsize)
         
     else
-
+        
         offset = getOffset(samp,blank,pars,elements,internal,transformation;
                            num=num,den=den)
 
@@ -320,13 +320,14 @@ end
 
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
+                          dt::AbstractDict,
                           blank::AbstractDataFrame,
                           pars::NamedTuple,
                           channels::AbstractDict,
                           anchors::AbstractDict;
                           num=nothing,den=nothing,transformation=nothing,
                           offset::AbstractDict,linecolor="black",linestyle=:solid)
-    pred = predict(samp,pars,blank,channels,anchors)
+    pred = predict(samp,dt,pars,blank,channels,anchors)
     rename!(pred,[channels[i] for i in names(pred)])
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
@@ -350,11 +351,11 @@ function MakiePlotFitted!(ax::Axis,
                           pred::AbstractDataFrame;
                           num=nothing,den=nothing,transformation=nothing,
                           offset::AbstractDict,linecolor="black",linestyle=:solid)
-    x = windowData(samp,signal=true)[:,1]
-    y = formRatios(pred,num,den)
+    x = KJ.windowData(samp,signal=true)[:,1]
+    y = KJ.formRatios(pred,num,den)
     ty = KJ.transformeer(y;transformation=transformation,offset=offset)
     for tyi in eachcol(ty)
-        lines!(x,tyi)
+        lines!(x,tyi;color=linecolor,linestyle=linestyle)
     end
 end
 export MakiePlotFitted!
