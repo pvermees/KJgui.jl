@@ -1,11 +1,13 @@
 if !(@isdefined rerun)
-    using Revise, Pkg
+    using Pkg
     Pkg.activate("/home/pvermees/git/KJgui.jl")
     Pkg.instantiate()
     Pkg.precompile()
     cd("/home/pvermees/git/KJgui.jl/test")
+    using Revise, KJgui
+    import KJ
 end
 
 rerun = true
 
-include("runtests.jl")
+KJ.TUI(KJgui,logbook="plot.log")

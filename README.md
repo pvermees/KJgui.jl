@@ -21,9 +21,9 @@ Pkg.add(url="https://github.com/pvermees/KJgui.jl.git")
 
 ```
 julia> using KJ, KJgui
-julia> KJ(KJgui)
+julia> TUI(KJgui)
 ----------
- KJ 0.0.1
+ KJ 0.1.1
 ----------
 
 r: Read data files[*]

@@ -1,6 +1,6 @@
 module KJgui
 
-using Infiltrator, Gtk4, Makie, KJ, DataFrames
+using Infiltrator, Gtk4, Makie, GLMakie, KJ, DataFrames
 import Random, CSV
 
 include("dialogs.jl")
