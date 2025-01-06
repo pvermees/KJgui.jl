@@ -1,7 +1,7 @@
 name = "KJgui"
 uuid = "2eef9ca3-af0c-42e0-b773-62fdacf1adee"
 authors = ["pvermees <p.vermeesch@ucl.ac.uk>"]
-version = "0.2.1"
+version = "0.3.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
