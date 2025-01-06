@@ -260,31 +260,36 @@ function add_listener!(ctrl::AbstractDict,
     bwin = draw_windows(ax,samp.bwin,x,ym,yM)
     swin = draw_windows(ax,samp.swin,x,ym,yM)
     blank = false
-    x1,x2,xm,xM = [0.0,0.0,0.0,0.0]
-    observers = []
+    fresh = true
+    xy = nothing
     windows = []
+    boxes = []
+    x1,x2,xm,xM = 0.0,0.0,0.0,0.0
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
             blank = x1 < samp.t0
-            win = blank ? bwin : swin
+            boxes = blank ? bwin : swin
             if !ispressed(ax,Keyboard.m)
-                observers = []
+                fresh = true
+            end
+            if fresh
+                for box in boxes
+                    delete!(ax.scene,box)
+                end
                 windows = []
+                fresh = !ispressed(ax,Keyboard.m)
             end
-            if length(observers)<1
-                observers = win
-            else
-                xy = draw_window(ax,xm,xM,ym,yM)
-                push!(observers,xy)
-            end
+            xy = Observable(Point2f[(xm,ym),(xm,yM),(xM,yM),(xM,ym)])
+            box = poly!(ax,xy;color=:transparent, strokewidth=1.0, linestyle=:dot)
+            push!(boxes,box)
         end
         if event.type === MouseEventTypes.leftdrag
             x2 = event.data[1]
             xm = minimum([x1,x2])
             xM = maximum([x1,x2])
-            observers[1].val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
-            notify(observers[1])
+            xy.val = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
+            notify(xy)
         end
         if event.type === MouseEventTypes.leftdragstop
             push!(windows,(xm,xM))
@@ -306,20 +311,11 @@ function draw_windows(ax::Axis,
     out = []
     for w in win
         xm, xM = x[w[1]], x[w[2]]
-        xy = draw_window(ax,xm,xM,ym,yM)
-        push!(out,xy)
+        xy = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
+        box = poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
+        push!(out,box)
     end
     return out
-end
-function draw_window(ax::Axis,
-                     xm::AbstractFloat,
-                     xM::AbstractFloat,
-                     ym::AbstractFloat,
-                     yM::AbstractFloat)
-    xy = Observable(Point2f[])
-    xy[] = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
-    poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
-    return xy
 end
 
 function MakiePlotFitted!(ax::Axis,

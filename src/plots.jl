@@ -24,7 +24,7 @@ function GUIplotter(ctrl::AbstractDict)
 end
 
 function GUIplotter!(ctrl::AbstractDict)
-    GUIclear!(ctrl)
+    GUIempty!(ctrl)
     if ctrl["method"] == "concentrations"
         GUIconcentrationPlotter!(ctrl)
     else
@@ -133,7 +133,7 @@ function GUItransformation!(ctrl::AbstractDict,
     return "x"
 end
 
-function GUIclear!(ctrl::AbstractDict)
+function GUIempty!(ctrl::AbstractDict)
     if "legend" in keys(ctrl)
         delete!(ctrl["legend"])
     end
