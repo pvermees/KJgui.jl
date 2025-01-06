@@ -1,5 +1,4 @@
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     method::AbstractString,
                     channels::AbstractDict,
                     blank::AbstractDataFrame,
@@ -16,15 +15,14 @@ function MakiePlot!(ax::Axis,
     Sanchors = getAnchors(method,standards,false)
     Ganchors = getAnchors(method,glass,true)
     anchors = merge(Sanchors,Ganchors)
-    MakiePlot!(ax,samp,channels,blank,pars,anchors;
+    MakiePlot!(ctrl,channels,blank,pars,anchors;
                num=num,den=den,transformation=transformation,
                seriestype=seriestype,
                ms=ms,ma=ma,xlim=xlim,ylim=ylim,i=i,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     method::AbstractString,
                     channels::AbstractDict,
                     blank::AbstractDataFrame,
@@ -38,7 +36,7 @@ function MakiePlot!(ax::Axis,
                     linecol="black",linestyle=:solid,i=nothing,
                     show_title=true,
                     titlefontsize=14)
-    MakiePlot!(ax,samp,method,channels,blank,pars,
+    MakiePlot!(ctrl,method,channels,blank,pars,
                collect(keys(standards)),collect(keys(glass));
                num=num,den=den,transformation=transformation,
                seriestype=seriestype,ms=ms,ma=ma,
@@ -47,8 +45,7 @@ function MakiePlot!(ax::Axis,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractDict;
                     num=nothing,den=nothing,
                     transformation=nothing,offset=nothing,
@@ -57,15 +54,14 @@ function MakiePlot!(ax::Axis,
                     display=true,i=nothing,
                     show_title=true,
                     titlefontsize=14)
-    MakiePlot!(ax,samp,collect(values(channels));
+    MakiePlot!(ctrl,collect(values(channels));
                num=num,den=den,transformation=transformation,
                offset=offset,seriestype=seriestype,
                ms=ms,ma=ma,xlim=xlim,ylim=ylim,i=i,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample;
+function MakiePlot!(ctrl::AbstractDict;
                     num=nothing,den=nothing,
                     transformation=nothing,offset=nothing,
                     seriestype=:scatter,
@@ -73,7 +69,7 @@ function MakiePlot!(ax::Axis,
                     display=true,i=nothing,
                     show_title=true,
                     titlefontsize=14)
-    MakiePlot!(ax,samp,getChannels(samp);
+    MakiePlot!(ctrl,getChannels(samp);
                num=num,den=den,transformation=transformation,
                offset=offset,seriestype=seriestype,
                ms=ms,ma=ma,
@@ -81,8 +77,7 @@ function MakiePlot!(ax::Axis,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::NamedTuple,
@@ -97,9 +92,12 @@ function MakiePlot!(ax::Axis,
                     i=nothing,
                     show_title=true,
                     titlefontsize=14)
+
+    samp = ctrl["run"][ctrl["i"]]
+    
     if samp.group == "sample"
 
-        MakiePlot!(ax,samp,channels;
+        MakiePlot!(ctrl,channels;
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,
                    xlim=xlim,ylim=ylim,display=display,i=i,
@@ -111,21 +109,20 @@ function MakiePlot!(ax::Axis,
         offset = getOffset(samp,channels,blank,pars,anchors,transformation;
                            num=num,den=den)
 
-        MakiePlot!(ax,samp,channels;
+        MakiePlot!(ctrl,channels;
                    num=num,den=den,transformation=transformation,offset=offset,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ax,samp,blank,pars,channels,anchors;
+        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
                          num=num,den=den,transformation=transformation,
                          offset=offset,linecolor=linecol,linestyle=linestyle)
         
     end
 end
 # concentrations
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::AbstractVector,
                     elements::AbstractDataFrame,
@@ -136,9 +133,12 @@ function MakiePlot!(ax::Axis,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
                     linecol="black",linestyle=:solid,i=nothing,
                     show_title=true,titlefontsize=14)
+
+    samp = ctrl["run"][ctrl["i"]]
+    
     if samp.group == "sample"
 
-        MakiePlot!(ax,samp;
+        MakiePlot!(ctrl;
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,
                    xlim=xlim,ylim=ylim,display=display,i=i,
@@ -150,20 +150,19 @@ function MakiePlot!(ax::Axis,
         offset = getOffset(samp,blank,pars,elements,internal,transformation;
                            num=num,den=den)
 
-        MakiePlot!(ax,samp;
+        MakiePlot!(ctrl;
                    num=num,den=den,transformation=transformation,offset=offset,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ax,samp,blank,pars,elements,internal;
+        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,elements,internal;
                          num=num,den=den,transformation=transformation,
                          offset=offset,linecolor=linecol,linestyle=linestyle)
         
     end
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::AbstractVector,
                     internal::AbstractString;
@@ -174,14 +173,13 @@ function MakiePlot!(ax::Axis,
                     linecol="black",linestyle=:solid,i=nothing,
                     show_title=true,titlefontsize=14)
     elements = channels2elements(samp)
-    MakiePlot!(ax,samp,blank,pars,elements,internal;
+    MakiePlot!(ctrl,blank,pars,elements,internal;
                num=num,den=den,transformation=transformation,
                seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
                linecol=linecol,linestyle=linestyle,i=i,
                show_title=show_title,titlefontsize=titlefontsize)
 end
-function MakiePlot!(ax::Axis,
-                    samp::Sample,
+function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractVector;
                     num=nothing,den=nothing,
                     transformation=nothing,offset=nothing,
@@ -190,10 +188,12 @@ function MakiePlot!(ax::Axis,
                     i::Union{Nothing,Integer}=nothing,
                     show_title=true,
                     titlefontsize=14)
+    samp = ctrl["run"][ctrl["i"]]
+    ax = ctrl["ax"]
     xlab = names(samp.dat)[1]
     x = samp.dat[:,xlab]
     meas = samp.dat[:,channels]
-    y = (isnothing(num) && isnothing(den)) ? meas : formRatios(meas,num,den)
+    y = (isnothing(num) && isnothing(den)) ? meas : KJ.formRatios(meas,num,den)
     if isnothing(offset)
         offset = Dict(zip(names(y),fill(0.0,size(y,2))))
     end
@@ -202,18 +202,18 @@ function MakiePlot!(ax::Axis,
     ylab = isnothing(transformation) ? ratsig : transformation*"("*ratsig*")"
 
     ax.xlabel = xlab
+    ax.ylabel = ylab
     ax.tellheight = false
     n_cols = size(ty,2)
-    if seriestype == :scatter
-        Random.seed!(4)
-        for i in 1:n_cols
-            sc = scatter!(ax, x, ty[:,i];
+    Random.seed!(4)
+    for i in 1:n_cols
+        good = isfinite.(ty[:,i])
+        if seriestype == :scatter
+            sc = scatter!(ax, x[good], ty[good,i];
                           color = RGBf(rand(3)...),
                           markersize=ms, strokewidth=ma, label=names(ty)[i])
-        end
-    else
-        for i in 1:n_cols
-            lines!(ax, x, ty[:,i]; linewidth=ms)
+        else
+            lines!(ax, x[good], ty[good,i]; linewidth=ms)
         end
     end
     if xlim != :auto
@@ -230,23 +230,93 @@ function MakiePlot!(ax::Axis,
         ax.title = title
         ax.titlesize = titlefontsize
     end
+    interactive_windows(ctrl,x)
+    
+end
+export MakiePlot!
+
+function interactive_windows(ctrl::AbstractDict,
+                             x::AbstractVector)
+    samp = ctrl["run"][ctrl["i"]]
+    ax = ctrl["ax"]
     reset_limits!(ax)
     ylims = collect(ax.yaxis.attributes.limits.val)
     if !isnothing(samp.t0)
         lines!(ax, [samp.t0, samp.t0], ylims;
                color=:gray, linestyle=:dash)
     end
-    for win in [samp.bwin, samp.swin]
-        for w in win
-            xm, xM = x[w[1]], x[w[2]]
-            ym, yM = ylims[1], ylims[2]
-            poly!(ax, [xm, xm, xM, xM, xm], [ym, yM, yM, ym, ym];
-                  color=:transparent, strokewidth=1.0, linestyle=:dot)
+    if :select_window in keys(interactions(ax))
+        Makie.deregister_interaction!(ax, :select_window)
+    end
+    add_listener!(ctrl,x,ylims[1],ylims[2])
+end
+
+function add_listener!(ctrl::AbstractDict,
+                       x::AbstractVector,
+                       ym::AbstractFloat,
+                       yM::AbstractFloat)
+    ax = ctrl["ax"]
+    samp = ctrl["run"][ctrl["i"]]
+    bwin = draw_windows(ax,samp.bwin,x,ym,yM)
+    swin = draw_windows(ax,samp.swin,x,ym,yM)
+    blank = false
+    fresh = true
+    xy = nothing
+    windows = []
+    boxes = []
+    x1,x2,xm,xM = 0.0,0.0,0.0,0.0
+    register_interaction!(ax,:select_window) do event::MouseEvent, axis
+        if event.type === MouseEventTypes.leftdragstart
+            x1 = event.data[1]
+            blank = x1 < samp.t0
+            boxes = blank ? bwin : swin
+            if !ispressed(ax,Keyboard.m)
+                fresh = true
+            end
+            if fresh
+                for box in boxes
+                    delete!(ax.scene,box)
+                end
+                windows = []
+                fresh = !ispressed(ax,Keyboard.m)
+            end
+            xy = Observable(Point2f[(xm,ym),(xm,yM),(xM,yM),(xM,ym)])
+            box = poly!(ax,xy;color=:transparent, strokewidth=1.0, linestyle=:dot)
+            push!(boxes,box)
+        end
+        if event.type === MouseEventTypes.leftdrag
+            x2 = event.data[1]
+            xm = minimum([x1,x2])
+            xM = maximum([x1,x2])
+            xy.val = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
+            notify(xy)
+        end
+        if event.type === MouseEventTypes.leftdragstop
+            push!(windows,(xm,xM))
+            obj = ispressed(ax,Keyboard.a) ? ctrl["run"] : samp
+            if blank
+                setBwin!(obj,windows;seconds=true)
+            else
+                setSwin!(obj,windows;seconds=true)
+            end
         end
     end
-
 end
-export MakiePlot!
+
+function draw_windows(ax::Axis,
+                      win::AbstractVector,
+                      x::AbstractVector,
+                      ym::AbstractFloat,
+                      yM::AbstractFloat)
+    out = []
+    for w in win
+        xm, xM = x[w[1]], x[w[2]]
+        xy = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
+        box = poly!(ax, xy; color=:transparent, strokewidth=1.0, linestyle=:dot)
+        push!(out,box)
+    end
+    return out
+end
 
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
