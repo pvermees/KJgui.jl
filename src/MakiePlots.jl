@@ -261,21 +261,30 @@ function add_listener!(ctrl::AbstractDict,
     swin = draw_windows(ax,samp.swin,x,ym,yM)
     blank = false
     x1,x2,xm,xM = [0.0,0.0,0.0,0.0]
-    observer = nothing
+    observers = []
     windows = []
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
             blank = x1 < samp.t0
             win = blank ? bwin : swin
-            observer = win[1]
+            if !ispressed(ax,Keyboard.m)
+                observers = []
+                windows = []
+            end
+            if length(observers)<1
+                observers = win
+            else
+                xy = draw_window(ax,xm,xM,ym,yM)
+                push!(observers,xy)
+            end
         end
         if event.type === MouseEventTypes.leftdrag
             x2 = event.data[1]
             xm = minimum([x1,x2])
             xM = maximum([x1,x2])
-            observer.val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
-            notify(observer)
+            observers[1].val = [[xm,ym],[xm,yM],[xM,yM],[xM,ym],[xm,ym]]
+            notify(observers[1])
         end
         if event.type === MouseEventTypes.leftdragstop
             push!(windows,(xm,xM))
