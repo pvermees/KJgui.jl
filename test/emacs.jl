@@ -10,4 +10,4 @@ end
 
 rerun = true
 
-KJ.TUI(KJgui)#,logbook="plot.log")
+KJ.TUI(KJgui;logbook="/home/pvermees/git/KJ.jl/test/logs/KJgui.log",reset=true)
