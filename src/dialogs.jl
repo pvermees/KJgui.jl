@@ -114,9 +114,11 @@ function GUIsubset!(ctrl::AbstractDict,
 end
 
 function GUIexport2csv(ctrl::AbstractDict)
-    save_dialog("Choose a csv file name",ctrl["gui"]) do fname
-        @async KJ.TUIexport2csv(ctrl,fname)
-        push!(ctrl["history"],["csv",fname])
+    if !ctrl["log"]
+        save_dialog("Choose a csv file name",ctrl["gui"]) do fname
+            @async KJ.TUIexport2csv(ctrl,fname)
+            push!(ctrl["history"],["csv",fname])
+        end
     end
     if ctrl["method"] == "concentrations"
         return "x"
@@ -127,9 +129,11 @@ end
 export GUIexport2csv
 
 function GUIexport2json(ctrl::AbstractDict)
-    save_dialog("Choose a json file name",ctrl["gui"]) do fname
-        @async KJ.TUIexport2json(ctrl,fname)
-        push!(ctrl["history"],["json",fname])
+    if !ctrl["log"]
+        save_dialog("Choose a json file name",ctrl["gui"]) do fname
+            @async KJ.TUIexport2json(ctrl,fname)
+            push!(ctrl["history"],["json",fname])
+        end
     end
     return "xx"
 end
