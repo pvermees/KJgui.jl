@@ -19,58 +19,48 @@ function GUIclear!(ctrl::AbstractDict)
 end
 
 function GUIloadICPdir!(ctrl::AbstractDict)
-    if !ctrl["log"]
+    if ctrl["log"]
+        out = nothing
+    else
         open_dialog("Choose a folder",ctrl["gui"];
                     select_folder=true,
                     start_folder=splitdir(ctrl["ICPpath"])[1]) do dname
                         @async KJ.TUIloadICPdir!(ctrl,dname)
                         push!(ctrl["history"],["loadICPdir",dname])
                     end
+        out = "xx"
     end
     ctrl["priority"]["load"] = false
-    return "xx"
+    return out
 end
 export GUIloadICPdir!
 
 function GUIloadICPfile!(ctrl::AbstractDict)
-    if !ctrl["log"]
+    if ctrl["log"]
+        out = nothing
+    else
         open_dialog("Choose an ICP-MS data file",ctrl["gui"];
                     start_folder=splitdir(ctrl["ICPpath"])[1]) do ICPpath
                         ctrl["ICPpath"] = ICPpath
                         push!(ctrl["history"],["loadICPfile",ICPpath])
                         @async open_dialog("Choose a laser log file",ctrl["gui"];
                                            start_folder=splitdir(ICPpath)[1]) do LApath
-                                               @async KJ.TUIloadLAfile!(ctrl,LApath)
                                                push!(ctrl["history"],["loadLAfile",LApath])
+                                               @async KJ.TUIloadLAfile!(ctrl,LApath)
                                            end
                     end
+        out = "xx"
     end
     ctrl["priority"]["load"] = false
-    return "xx"
+    return out
 end
 export GUIloadICPfile!
 
 function GUIimportLog!(ctrl::AbstractDict)
     open_dialog("Choose a session log",ctrl["gui"]) do fname
-        @async KJ.TUIimportLog!(ctrl,fname)
-        push!(ctrl["history"],["importLog",fname])
+        @async KJ.TUIimportLog!(ctrl,fname;verbose=true)
     end
-    return nothing
-end
-function GUIimportLog!(ctrl::AbstractDict,
-                       response::AbstractString)
-    KJ.TUIclear!(ctrl)
-    ctrl["log"] = true
-    history = CSV.read(response,DataFrame)
-    for row in eachrow(history)
-        try
-            KJ.dispatch!(ctrl;key=row[1],response=row[2])
-        catch e
-            println(e)
-        end
-    end
-    ctrl["log"] = false
-    return nothing
+    return "x"
 end
 export GUIimportLog!
 
@@ -85,7 +75,6 @@ export GUIexportLog
 function GUIopenTemplate!(ctrl::AbstractDict)
     open_dialog("Choose a KJ template",ctrl["gui"]) do fname
         @async KJ.TUIopenTemplate!(ctrl,fname)
-        push!(ctrl["history"],["openTemplate",fname])
     end
     ctrl["priority"]["method"] = false
     ctrl["priority"]["standards"] = false
@@ -97,7 +86,6 @@ export GUIopenTemplate!
 function GUIsaveTemplate(ctrl::AbstractDict)
     save_dialog("Choose a file name",ctrl["gui"]) do fname
         @async KJ.TUIsaveTemplate(ctrl,fname)
-        push!(ctrl["history"],["saveTemplate",fname])
     end
     return "x"
 end
@@ -114,27 +102,29 @@ function GUIsubset!(ctrl::AbstractDict,
 end
 
 function GUIexport2csv(ctrl::AbstractDict)
-    if !ctrl["log"]
-        save_dialog("Choose a csv file name",ctrl["gui"]) do fname
-            @async KJ.TUIexport2csv(ctrl,fname)
-            push!(ctrl["history"],["csv",fname])
-        end
-    end
-    if ctrl["method"] == "concentrations"
-        return "x"
+    if ctrl["log"]
+        out = nothing
     else
-        return "xx"
+        save_dialog("Choose a csv file name",ctrl["gui"]) do fname
+            push!(ctrl["history"],["csv",fname])
+            @async KJ.TUIexport2csv(ctrl,fname)
+        end
+        out = ctrl["method"] == "concentrations" ? "x" : "xx"
     end
+    return out
 end
 export GUIexport2csv
 
 function GUIexport2json(ctrl::AbstractDict)
-    if !ctrl["log"]
+    if ctrl["log"]
+        out = nothing
+    else
         save_dialog("Choose a json file name",ctrl["gui"]) do fname
-            @async KJ.TUIexport2json(ctrl,fname)
             push!(ctrl["history"],["json",fname])
+            @async KJ.TUIexport2json(ctrl,fname)
         end
+        out = "xx"
     end
-    return "xx"
+    return out
 end
 export GUIexport2json

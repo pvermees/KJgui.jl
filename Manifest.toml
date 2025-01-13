@@ -815,11 +815,11 @@ version = "3.1.1+0"
 
 [[deps.KJ]]
 deps = ["CSV", "DataFrames", "Dates", "Infiltrator", "LinearAlgebra", "Optim", "Plots", "Printf", "Statistics"]
-git-tree-sha1 = "9a6b0c3124c8616fcd8db2c9456a49552cff0885"
+git-tree-sha1 = "5979c585fb9b0172ed17eda22925b9064d38f270"
 repo-rev = "main"
 repo-url = "https://github.com/pvermees/KJ.jl.git"
 uuid = "c976074e-2e5b-4ac6-9301-394412a2f0b0"
-version = "0.3.1"
+version = "0.3.2"
 
 [[deps.KernelDensity]]
 deps = ["Distributions", "DocStringExtensions", "FFTW", "Interpolations", "StatsBase"]
