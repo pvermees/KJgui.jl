@@ -209,9 +209,9 @@ function MakiePlot!(ctrl::AbstractDict,
     for i in 1:n_cols
         good = isfinite.(ty[:,i])
         if seriestype == :scatter
-            sc = scatter!(ax, x[good], ty[good,i];
-                          color = RGBf(rand(3)...),
-                          markersize=ms, strokewidth=ma, label=names(ty)[i])
+            scatter!(ax, x[good], ty[good,i];
+                     color = RGBf(rand(3)...),
+                     markersize=ms, strokewidth=ma, label=names(ty)[i])
         else
             lines!(ax, x[good], ty[good,i]; linewidth=ms)
         end

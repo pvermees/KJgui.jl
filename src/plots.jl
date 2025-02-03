@@ -1,9 +1,9 @@
 function GUIviewer!(ctrl::AbstractDict)
-    GUIplotter(ctrl)
+    GUIinitPlotter!(ctrl)
     return "view"
 end
 
-function GUIplotter(ctrl::AbstractDict)
+function GUIinitPlotter!(ctrl::AbstractDict)
     ctrl["fig"] = Figure()
     grid = ctrl["fig"][1,1] = GridLayout()
     prev = Button(ctrl["fig"], label = "<")
@@ -22,6 +22,7 @@ function GUIplotter(ctrl::AbstractDict)
     grid[1:2, 3] = next
     display(ctrl["fig"])
 end
+export GUIinitPlotter!
 
 function GUIplotter!(ctrl::AbstractDict)
     GUIempty!(ctrl)
@@ -83,7 +84,7 @@ function GUIgoto!(ctrl::AbstractDict,
     ctrl["i"] = parse(Int,response)
     if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
     if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
-    GUIplotter(ctrl)
+    GUIinitPlotter!(ctrl)
     return "x"
 end
 
