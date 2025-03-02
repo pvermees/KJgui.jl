@@ -44,8 +44,8 @@ function MakieTest()
 end
 
 function ExtensionTest()
-    KJ.TUI(KJgui,logbook="test.log")
+    KJ.TUI(KJgui,logbook="logs/test.log")
 end
 
 @testset "Makie test" begin MakieTest() end
-#@testset "Extension test" begin ExtensionTest() end
+@testset "Extension test" begin ExtensionTest() end

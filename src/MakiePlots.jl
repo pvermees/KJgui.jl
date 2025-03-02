@@ -106,7 +106,7 @@ function MakiePlot!(ctrl::AbstractDict,
         
     else
         
-        offset = getOffset(samp,ctrl["dwell"],channels,blank,pars,anchors,transformation;
+        offset = getOffset(samp,channels,blank,pars,anchors,transformation;
                            num=num,den=den)
 
         MakiePlot!(ctrl,channels;
@@ -115,7 +115,7 @@ function MakiePlot!(ctrl::AbstractDict,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ctrl["ax"],samp,ctrl["dwell"],blank,pars,channels,anchors;
+        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
                          num=num,den=den,transformation=transformation,
                          offset=offset,linecolor=linecol,linestyle=linestyle)
         
@@ -320,14 +320,13 @@ end
 
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
-                          dt::AbstractDict,
                           blank::AbstractDataFrame,
                           pars::NamedTuple,
                           channels::AbstractDict,
                           anchors::AbstractDict;
                           num=nothing,den=nothing,transformation=nothing,
                           offset::AbstractDict,linecolor="black",linestyle=:solid)
-    pred = predict(samp,dt,pars,blank,channels,anchors)
+    pred = predict(samp,pars,blank,channels,anchors)
     rename!(pred,[channels[i] for i in names(pred)])
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
