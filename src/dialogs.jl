@@ -58,7 +58,7 @@ export GUIloadICPfile!
 
 function GUIimportLog!(ctrl::AbstractDict)
     open_dialog("Choose a session log",ctrl["gui"]) do fname
-        KJ.TUIimportLog!(ctrl,fname;verbose=true)
+        KJ.TUIimportLog!(ctrl,fname;verbose=false)
     end
     return "x"
 end
