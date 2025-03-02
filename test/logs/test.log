@@ -2,13 +2,11 @@ task,action
 top,r
 instrument,a
 dir|file,d
-loadICPdir,/home/pvermees/git/KJ.jl/test/data/Lu-Hf
+loadICPdir,/home/pvermees/git/KJgui.jl/test/Lu-Hf
 top,m
 method,1
 columns,"15,17,18"
 top,s
-standards,a
-chooseStandard,x
 standards,a
 chooseStandard,3
 addStandardGroup,p
@@ -21,8 +19,4 @@ addGlassGroup,p
 addGlassByPrefix,NIST612
 glass,x
 top,p
-top,e
-export,a
-format,c
-csv,/home/pvermees/git/KJ.jl/test/KJgui.csv
 top,l

@@ -5,7 +5,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     pars::NamedTuple,
                     standards::AbstractVector,
                     glass::AbstractVector;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -29,7 +29,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     pars::NamedTuple,
                     standards::AbstractDict,
                     glass::AbstractDict;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -47,7 +47,7 @@ function MakiePlot!(ctrl::AbstractDict,
 end
 function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractDict;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,offset=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -62,7 +62,7 @@ function MakiePlot!(ctrl::AbstractDict,
                titlefontsize=titlefontsize)
 end
 function MakiePlot!(ctrl::AbstractDict;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,offset=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -82,7 +82,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::NamedTuple,
                     anchors::AbstractDict;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,
@@ -106,7 +106,7 @@ function MakiePlot!(ctrl::AbstractDict,
         
     else
         
-        offset = getOffset(samp,ctrl["dwell"],channels,blank,pars,anchors,transformation;
+        offset = getOffset(samp,channels,blank,pars,anchors,transformation;
                            num=num,den=den)
 
         MakiePlot!(ctrl,channels;
@@ -115,7 +115,7 @@ function MakiePlot!(ctrl::AbstractDict,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ctrl["ax"],samp,ctrl["dwell"],blank,pars,channels,anchors;
+        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
                          num=num,den=den,transformation=transformation,
                          offset=offset,linecolor=linecol,linestyle=linestyle)
         
@@ -127,7 +127,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     pars::AbstractVector,
                     elements::AbstractDataFrame,
                     internal::AbstractString;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -166,7 +166,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::AbstractVector,
                     internal::AbstractString;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
@@ -181,7 +181,7 @@ function MakiePlot!(ctrl::AbstractDict,
 end
 function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractVector;
-                    num=nothing,den=nothing,
+                    num=nothing,den=ctrl["den"],
                     transformation=nothing,offset=nothing,
                     seriestype=:scatter,ms=5,ma=1,
                     xlim=:auto,ylim=:auto,
@@ -209,9 +209,9 @@ function MakiePlot!(ctrl::AbstractDict,
     for i in 1:n_cols
         good = isfinite.(ty[:,i])
         if seriestype == :scatter
-            sc = scatter!(ax, x[good], ty[good,i];
-                          color = RGBf(rand(3)...),
-                          markersize=ms, strokewidth=ma, label=names(ty)[i])
+            scatter!(ax, x[good], ty[good,i];
+                     color = RGBf(rand(3)...),
+                     markersize=ms, strokewidth=ma, label=names(ty)[i])
         else
             lines!(ax, x[good], ty[good,i]; linewidth=ms)
         end
@@ -320,14 +320,13 @@ end
 
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
-                          dt::AbstractDict,
                           blank::AbstractDataFrame,
                           pars::NamedTuple,
                           channels::AbstractDict,
                           anchors::AbstractDict;
                           num=nothing,den=nothing,transformation=nothing,
                           offset::AbstractDict,linecolor="black",linestyle=:solid)
-    pred = predict(samp,dt,pars,blank,channels,anchors)
+    pred = predict(samp,pars,blank,channels,anchors)
     rename!(pred,[channels[i] for i in names(pred)])
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
