@@ -22,9 +22,8 @@ function MakieTest()
         glass = Dict("NIST612" => "NIST612p")
         den = nothing
     end
-    dt = dwelltime(myrun)
-    blk, fit = process!(myrun,dt,method,channels,standards,glass,
-                        nblank=2,ndrift=1,ndown=0)
+    blk, fit = KJ.process!(myrun,method,channels,standards,glass;
+                           nblank=2,ndrift=1,ndown=0)
     ctrl = Dict(
         "run" => myrun,
         "i" => 1,
@@ -35,12 +34,11 @@ function MakieTest()
         "glass" => glass,
         "PAcutoff" => nothing,
         "blank" => blk,
-        "dwell" => dt,
         "par" => fit,
         "transformation" => "sqrt"
     )
     GUIinitPlotter!(ctrl)
-    MakiePlot!(ctrl,channels;transformation="log",den=den)
+    MakiePlot!(ctrl,channels;transformation="Log",den=den)
 end
 
 function ExtensionTest()

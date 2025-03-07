@@ -201,10 +201,10 @@ function MakiePlot!(ctrl::AbstractDict,
         end
     end
     if xlim != :auto
-        xlimits!(ax, xlim)
+        xlims!(ax, xlim)
     end
     if ylim != :auto
-        ylimits!(ax, ylim)
+        ylims!(ax, ylim)
     end
     if show_title
         title = samp.sname * " [" * samp.group * "]"
