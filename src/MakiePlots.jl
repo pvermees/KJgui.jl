@@ -94,7 +94,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     titlefontsize=14)
 
     samp = ctrl["run"][ctrl["i"]]
-    
+
     if samp.group == "sample"
 
         MakiePlot!(ctrl,channels;
@@ -105,7 +105,7 @@ function MakiePlot!(ctrl::AbstractDict,
                    titlefontsize=titlefontsize)
         
     else
-        
+
         MakiePlot!(ctrl,channels;
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
@@ -117,6 +117,12 @@ function MakiePlot!(ctrl::AbstractDict,
                          linecolor=linecol,linestyle=linestyle)
         
     end
+
+    MakiePlotFittedBlank!(ctrl["ax"],samp,blank,channels;
+                          num=num,den=den,
+                          transformation=transformation,
+                          linecolor=linecol,linestyle=linestyle)
+
 end
 # concentrations
 function MakiePlot!(ctrl::AbstractDict,
@@ -132,7 +138,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     show_title=true,titlefontsize=14)
 
     samp = ctrl["run"][ctrl["i"]]
-    
+
     if samp.group == "sample"
 
         MakiePlot!(ctrl;
@@ -155,6 +161,11 @@ function MakiePlot!(ctrl::AbstractDict,
                          linecolor=linecol,linestyle=linestyle)
         
     end
+
+    MakiePlotFittedBlank!(ctrl["ax"],samp,blank;
+                          num=num,den=den,transformation=transformation,
+                          linecolor=linecol,linestyle=linestyle)
+
 end
 function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
@@ -184,7 +195,8 @@ function MakiePlot!(ctrl::AbstractDict,
                     titlefontsize=14)
     samp = ctrl["run"][ctrl["i"]]
     ax = ctrl["ax"]
-    x, y, ty, xlab, ylab, ylim = KJ.prep_plot(samp,channels,num,den,ylim,transformation)
+    x, y, ty, xlab, ylab, ylim = KJ.prep_plot(samp,channels,num,den,
+                                              ylim,transformation)
     ax.xlabel = xlab
     ax.ylabel = ylab
     ax.tellheight = false
@@ -302,6 +314,7 @@ function draw_windows(ax::Axis,
     return out
 end
 
+# ratios
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           blank::AbstractDataFrame,
@@ -316,6 +329,7 @@ function MakiePlotFitted!(ax::Axis,
                      num=num,den=den,transformation=transformation,
                      linecolor=linecolor,linestyle=linestyle)
 end
+# concentrations
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           blank::AbstractDataFrame,
@@ -329,12 +343,14 @@ function MakiePlotFitted!(ax::Axis,
                      num=num,den=den,transformation=transformation,
                      linecolor=linecolor,linestyle=linestyle)
 end
+# helper
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           pred::AbstractDataFrame;
+                          blank::Bool=false,signal::Bool=true,
                           num=nothing,den=nothing,transformation=nothing,
                           linecolor="black",linestyle=:solid)
-    x = KJ.windowData(samp,signal=true)[:,1]
+    x = KJ.windowData(samp,blank=blank,signal=signal)[:,1]
     y = KJ.formRatios(pred,num,den)
     ty = KJ.transformeer(y,transformation)
     for tyi in eachcol(ty)
@@ -342,3 +358,29 @@ function MakiePlotFitted!(ax::Axis,
     end
 end
 export MakiePlotFitted!
+
+# ratios
+function MakiePlotFittedBlank!(ax::Axis,
+                               samp::Sample,
+                               blank::AbstractDataFrame,
+                               channels::AbstractDict;
+                               num=nothing,den=nothing,transformation=nothing,
+                               linecolor="black",linestyle=:solid)
+    pred = KJ.predict(samp,blank[:,collect(values(channels))])
+    MakiePlotFitted!(ax,samp,pred;
+                     blank=true,signal=false,
+                     num=num,den=den,transformation=transformation,
+                     linecolor=linecolor,linestyle=linestyle)
+end
+# concentrations
+function MakiePlotFittedBlank!(ax::Axis,
+                               samp::Sample,
+                               blank::AbstractDataFrame;
+                               num=nothing,den=nothing,transformation=nothing,
+                               linecolor="black",linestyle=:solid)
+    pred = KJ.predict(samp,blank)
+    MakiePlotFitted!(ax,samp,pred;
+                     blank=true,signal=false,
+                     num=num,den=den,transformation=transformation,
+                     linecolor=linecolor,linestyle=linestyle)
+end

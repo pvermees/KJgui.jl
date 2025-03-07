@@ -10,7 +10,7 @@ end
 
 rerun = true
 
-if true
+if false
     KJ.TUI(KJgui;logbook="logs/test.log",reset=true)
 else
     include("runtests.jl")
