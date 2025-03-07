@@ -48,7 +48,7 @@ end
 function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractDict;
                     num=nothing,den=ctrl["den"],
-                    transformation=nothing,offset=nothing,
+                    transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
                     display=true,i=nothing,
@@ -56,14 +56,14 @@ function MakiePlot!(ctrl::AbstractDict,
                     titlefontsize=14)
     MakiePlot!(ctrl,collect(values(channels));
                num=num,den=den,transformation=transformation,
-               offset=offset,seriestype=seriestype,
+               seriestype=seriestype,
                ms=ms,ma=ma,xlim=xlim,ylim=ylim,i=i,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
 function MakiePlot!(ctrl::AbstractDict;
                     num=nothing,den=ctrl["den"],
-                    transformation=nothing,offset=nothing,
+                    transformation=nothing,
                     seriestype=:scatter,
                     ms=5,ma=1,xlim=:auto,ylim=:auto,
                     display=true,i=nothing,
@@ -71,7 +71,7 @@ function MakiePlot!(ctrl::AbstractDict;
                     titlefontsize=14)
     MakiePlot!(ctrl,getChannels(samp);
                num=num,den=den,transformation=transformation,
-               offset=offset,seriestype=seriestype,
+               seriestype=seriestype,
                ms=ms,ma=ma,
                xlim=xlim,ylim=ylim,i=i,
                show_title=show_title,
@@ -94,7 +94,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     titlefontsize=14)
 
     samp = ctrl["run"][ctrl["i"]]
-    
+
     if samp.group == "sample"
 
         MakiePlot!(ctrl,channels;
@@ -105,21 +105,24 @@ function MakiePlot!(ctrl::AbstractDict,
                    titlefontsize=titlefontsize)
         
     else
-        
-        offset = getOffset(samp,channels,blank,pars,anchors,transformation;
-                           num=num,den=den)
 
         MakiePlot!(ctrl,channels;
-                   num=num,den=den,transformation=transformation,offset=offset,
+                   num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
         MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
                          num=num,den=den,transformation=transformation,
-                         offset=offset,linecolor=linecol,linestyle=linestyle)
+                         linecolor=linecol,linestyle=linestyle)
         
     end
+
+    MakiePlotFittedBlank!(ctrl["ax"],samp,blank,channels;
+                          num=num,den=den,
+                          transformation=transformation,
+                          linecolor=linecol,linestyle=linestyle)
+
 end
 # concentrations
 function MakiePlot!(ctrl::AbstractDict,
@@ -135,7 +138,7 @@ function MakiePlot!(ctrl::AbstractDict,
                     show_title=true,titlefontsize=14)
 
     samp = ctrl["run"][ctrl["i"]]
-    
+
     if samp.group == "sample"
 
         MakiePlot!(ctrl;
@@ -147,20 +150,22 @@ function MakiePlot!(ctrl::AbstractDict,
         
     else
         
-        offset = getOffset(samp,blank,pars,elements,internal,transformation;
-                           num=num,den=den)
-
         MakiePlot!(ctrl;
-                   num=num,den=den,transformation=transformation,offset=offset,
+                   num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
                    display=display,i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
         MakiePlotFitted!(ctrl["ax"],samp,blank,pars,elements,internal;
                          num=num,den=den,transformation=transformation,
-                         offset=offset,linecolor=linecol,linestyle=linestyle)
+                         linecolor=linecol,linestyle=linestyle)
         
     end
+
+    MakiePlotFittedBlank!(ctrl["ax"],samp,blank;
+                          num=num,den=den,transformation=transformation,
+                          linecolor=linecol,linestyle=linestyle)
+
 end
 function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
@@ -182,7 +187,7 @@ end
 function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractVector;
                     num=nothing,den=ctrl["den"],
-                    transformation=nothing,offset=nothing,
+                    transformation=nothing,
                     seriestype=:scatter,ms=5,ma=1,
                     xlim=:auto,ylim=:auto,
                     i::Union{Nothing,Integer}=nothing,
@@ -190,17 +195,8 @@ function MakiePlot!(ctrl::AbstractDict,
                     titlefontsize=14)
     samp = ctrl["run"][ctrl["i"]]
     ax = ctrl["ax"]
-    xlab = names(samp.dat)[1]
-    x = samp.dat[:,xlab]
-    meas = samp.dat[:,channels]
-    y = (isnothing(num) && isnothing(den)) ? meas : KJ.formRatios(meas,num,den)
-    if isnothing(offset)
-        offset = Dict(zip(names(y),fill(0.0,size(y,2))))
-    end
-    ty = KJ.transformeer(y;transformation=transformation,offset=offset)
-    ratsig = isnothing(den) ? "signal" : "ratio"
-    ylab = isnothing(transformation) ? ratsig : transformation*"("*ratsig*")"
-
+    x, y, ty, xlab, ylab, ylim = KJ.prep_plot(samp,channels,num,den,
+                                              ylim,transformation)
     ax.xlabel = xlab
     ax.ylabel = ylab
     ax.tellheight = false
@@ -217,10 +213,10 @@ function MakiePlot!(ctrl::AbstractDict,
         end
     end
     if xlim != :auto
-        xlimits!(ax, xlim)
+        xlims!(ax, xlim)
     end
     if ylim != :auto
-        ylimits!(ax, ylim)
+        ylims!(ax, ylim)
     end
     if show_title
         title = samp.sname * " [" * samp.group * "]"
@@ -318,6 +314,7 @@ function draw_windows(ax::Axis,
     return out
 end
 
+# ratios
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           blank::AbstractDataFrame,
@@ -325,13 +322,14 @@ function MakiePlotFitted!(ax::Axis,
                           channels::AbstractDict,
                           anchors::AbstractDict;
                           num=nothing,den=nothing,transformation=nothing,
-                          offset::AbstractDict,linecolor="black",linestyle=:solid)
+                          linecolor="black",linestyle=:solid)
     pred = predict(samp,pars,blank,channels,anchors)
     rename!(pred,[channels[i] for i in names(pred)])
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
-                     offset=offset,linecolor=linecolor,linestyle=linestyle)
+                     linecolor=linecolor,linestyle=linestyle)
 end
+# concentrations
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           blank::AbstractDataFrame,
@@ -339,22 +337,50 @@ function MakiePlotFitted!(ax::Axis,
                           elements::AbstractDataFrame,
                           internal::AbstractString;
                           num=nothing,den=nothing,transformation=nothing,
-                          offset::AbstractDict,linecolor="black",linestyle=:solid)
+                          linecolor="black",linestyle=:solid)
     pred = predict(samp,pars,blank,elements,internal)
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
-                     offset=offset,linecolor=linecolor,linestyle=linestyle)
+                     linecolor=linecolor,linestyle=linestyle)
 end
+# helper
 function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           pred::AbstractDataFrame;
+                          blank::Bool=false,signal::Bool=true,
                           num=nothing,den=nothing,transformation=nothing,
-                          offset::AbstractDict,linecolor="black",linestyle=:solid)
-    x = KJ.windowData(samp,signal=true)[:,1]
+                          linecolor="black",linestyle=:solid)
+    x = KJ.windowData(samp,blank=blank,signal=signal)[:,1]
     y = KJ.formRatios(pred,num,den)
-    ty = KJ.transformeer(y;transformation=transformation,offset=offset)
+    ty = KJ.transformeer(y,transformation)
     for tyi in eachcol(ty)
         lines!(x,tyi;color=linecolor,linestyle=linestyle)
     end
 end
 export MakiePlotFitted!
+
+# ratios
+function MakiePlotFittedBlank!(ax::Axis,
+                               samp::Sample,
+                               blank::AbstractDataFrame,
+                               channels::AbstractDict;
+                               num=nothing,den=nothing,transformation=nothing,
+                               linecolor="black",linestyle=:solid)
+    pred = KJ.predict(samp,blank[:,collect(values(channels))])
+    MakiePlotFitted!(ax,samp,pred;
+                     blank=true,signal=false,
+                     num=num,den=den,transformation=transformation,
+                     linecolor=linecolor,linestyle=linestyle)
+end
+# concentrations
+function MakiePlotFittedBlank!(ax::Axis,
+                               samp::Sample,
+                               blank::AbstractDataFrame;
+                               num=nothing,den=nothing,transformation=nothing,
+                               linecolor="black",linestyle=:solid)
+    pred = KJ.predict(samp,blank)
+    MakiePlotFitted!(ax,samp,pred;
+                     blank=true,signal=false,
+                     num=num,den=den,transformation=transformation,
+                     linecolor=linecolor,linestyle=linestyle)
+end

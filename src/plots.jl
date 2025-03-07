@@ -52,7 +52,7 @@ end
 
 function GUIgeochronPlotter!(ctrl::AbstractDict)
     samp = ctrl["run"][ctrl["i"]]
-    if isnothing(ctrl["blank"]) | (samp.group=="sample")
+    if isnothing(ctrl["blank"])
         MakiePlot!(ctrl,ctrl["channels"];
                    den=ctrl["den"],
                    transformation=ctrl["transformation"],
@@ -124,7 +124,7 @@ end
 function GUItransformation!(ctrl::AbstractDict,
                             response::AbstractString)
     if response=="L"
-        ctrl["transformation"] = "log"
+        ctrl["transformation"] = "Log"
     elseif response=="s"
         ctrl["transformation"] = "sqrt"
     else
