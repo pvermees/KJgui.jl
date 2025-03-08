@@ -53,7 +53,6 @@ function MakieTest()
         "transformation" => "sqrt"
     )
     GUIinitPlotter!(ctrl)
-    MakiePlot!(ctrl,channels;transformation="Log",den=den)
 end
 
 function ExtensionTest()

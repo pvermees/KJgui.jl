@@ -237,10 +237,6 @@ function interactive_windows(ctrl::AbstractDict,
     ax = ctrl["ax"]
     reset_limits!(ax)
     ylims = collect(ax.yaxis.attributes.limits.val)
-    if !isnothing(samp.t0)
-        lines!(ax, [samp.t0, samp.t0], ylims;
-               color=:gray, linestyle=:dash)
-    end
     if :select_window in keys(interactions(ax))
         Makie.deregister_interaction!(ax, :select_window)
     end
@@ -253,46 +249,76 @@ function add_listener!(ctrl::AbstractDict,
                        yM::AbstractFloat)
     ax = ctrl["ax"]
     samp = ctrl["run"][ctrl["i"]]
+    obs_t0 = Observable(Point2f[(samp.t0,ym),(samp.t0,yM)])
+    lines!(ax,obs_t0; color=:gray, linestyle=:dash)
     bwin = draw_windows(ax,samp.bwin,x,ym,yM)
     swin = draw_windows(ax,samp.swin,x,ym,yM)
-    blank = false
+    obs_win = nothing
+    selected = nothing
     fresh = true
-    xy = nothing
     windows = []
     boxes = []
+    buffer = i2t(samp,1)
     x1,x2,xm,xM = 0.0,0.0,0.0,0.0
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
-            blank = x1 < samp.t0
-            boxes = blank ? bwin : swin
-            if !ispressed(ax,Keyboard.m)
-                fresh = true
+            if x1 < obs_t0.val[1][1] - buffer
+                selected = "blank"
+                boxes = bwin
+            elseif x1 > obs_t0.val[1][1] + buffer
+                selected = "signal"
+                boxes = swin
+            else
+                selected = "t0"
+                boxes = nothing
             end
-            if fresh
-                for box in boxes
-                    delete!(ax.scene,box)
+            if selected in ("blank","signal")
+                if !ispressed(ax,Keyboard.m)
+                    fresh = true
                 end
-                windows = []
-                fresh = !ispressed(ax,Keyboard.m)
+                if fresh
+                    for box in boxes
+                        delete!(ax.scene,box)
+                    end
+                    windows = []
+                    fresh = !ispressed(ax,Keyboard.m)
+                end
+                obs_win = Observable(Point2f[(xm,ym),(xm,yM),(xM,yM),(xM,ym)])
+                box = poly!(ax,obs_win;color=:transparent, strokewidth=1.0, linestyle=:dot)
+                push!(boxes,box)
             end
-            xy = Observable(Point2f[(xm,ym),(xm,yM),(xM,yM),(xM,ym)])
-            box = poly!(ax,xy;color=:transparent, strokewidth=1.0, linestyle=:dot)
-            push!(boxes,box)
         end
         if event.type === MouseEventTypes.leftdrag
             x2 = event.data[1]
-            xm = minimum([x1,x2])
-            xM = maximum([x1,x2])
-            xy.val = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
-            notify(xy)
+            if selected == "t0"
+                obs_t0.val = [(x2,ym),(x2,yM)]
+                notify(obs_t0)
+            else
+                xm = minimum([x1,x2])
+                xM = maximum([x1,x2])
+                obs_win.val = [(xm,ym),(xm,yM),(xM,yM),(xM,ym)]
+                notify(obs_win)
+            end
         end
         if event.type === MouseEventTypes.leftdragstop
             push!(windows,(xm,xM))
             obj = ispressed(ax,Keyboard.a) ? ctrl["run"] : samp
-            if blank
+            if selected == "blank"
                 setBwin!(obj,windows;seconds=true)
-            else
+            elseif selected == "t0"
+                sett0!(obj,obs_t0.val[1][1])
+                for win in bwin
+                    delete!(ax.scene,win)
+                end
+                for win in swin
+                    delete!(ax.scene,win)
+                end
+                setBwin!(obj)
+                setSwin!(obj)
+                bwin = draw_windows(ax,samp.bwin,x,ym,yM)
+                swin = draw_windows(ax,samp.swin,x,ym,yM)
+            elseif selected == "signal"
                 setSwin!(obj,windows;seconds=true)
             end
         end
