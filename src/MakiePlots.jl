@@ -308,8 +308,16 @@ function add_listener!(ctrl::AbstractDict,
                 setBwin!(obj,windows;seconds=true)
             elseif selected == "t0"
                 sett0!(obj,obs_t0.val[1][1])
+                for win in bwin
+                    delete!(ax.scene,win)
+                end
+                for win in swin
+                    delete!(ax.scene,win)
+                end
                 setBwin!(obj)
                 setSwin!(obj)
+                bwin = draw_windows(ax,samp.bwin,x,ym,yM)
+                swin = draw_windows(ax,samp.swin,x,ym,yM)
             elseif selected == "signal"
                 setSwin!(obj,windows;seconds=true)
             end
