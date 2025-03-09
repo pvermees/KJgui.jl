@@ -15,8 +15,7 @@ function GUIclear!(ctrl::AbstractDict)
     for (k,v) in default
         ctrl[k] = v
     end
-    delete!(ctrl,"fig")
-    delete!(ctrl,"ax")
+    GUIempty!(ctrl)
     return nothing
 end
 

@@ -1,7 +1,7 @@
 using KJ, KJgui, Makie, Test, Infiltrator
 
 function MakieTest()
-    if true
+    if false
         myrun = load("/home/pvermees/Dropbox/Plasmatrace/Abdulkadir",
                      instrument="Agilent")
         sett0!(myrun,6.5)
@@ -27,7 +27,7 @@ function MakieTest()
         glass = Dict("NIST612" => "NIST612")
         den = "Pb206"
     end
-    if false
+    if true
         myrun = load("Lu-Hf",instrument="Agilent")
         method = "Lu-Hf"
         channels = Dict("d"=>"Hf178 -> 260",
@@ -37,26 +37,26 @@ function MakieTest()
         glass = Dict("NIST612" => "NIST612p")
         den = nothing
     end
-    blk, fit = KJ.process!(myrun,method,channels,standards,glass;
-                           nblank=2,ndrift=1,ndown=0)
+    #blk, fit = KJ.process!(myrun,method,channels,standards,glass;
+    #                       nblank=2,ndrift=1,ndown=0)
     ctrl = Dict(
         "run" => myrun,
         "i" => 1,
-        "den" => den,
-        "method" => method,
-        "channels" => channels,
-        "standards" => standards,
-        "glass" => glass,
+        "den" => nothing, #den,
+        "method" => "", #method,
+        "channels" => getChannels(myrun), #channels,
+        "standards" => Dict{String,Union{Nothing,String}}(), #standards,
+        "glass" => Dict{String,Union{Nothing,String}}(), #glass,
         "PAcutoff" => nothing,
-        "blank" => blk,
-        "par" => fit,
+        "blank" => nothing, #blk,
+        "par" => nothing, #fit,
         "transformation" => "sqrt"
     )
     GUIinitPlotter!(ctrl)
 end
 
 function ExtensionTest()
-    KJ.TUI(KJgui,logbook="logs/test.log")
+    KJ.TUI(KJgui)#,logbook="logs/test.log")
 end
 
 #@testset "Makie test" begin MakieTest() end
