@@ -27,7 +27,7 @@ function extend!(_KJ::AbstractDict)
     updateTree!(_KJ["tree"],"export";
                 action = GUIsubset!)
 
-    _KJ["tree"]["top"].action["v"] = GUIinitPlotter!
+    _KJ["tree"]["top"].action["v"] = GUIviewer!
 
     updateTree!(_KJ["tree"],"view";
                 message = 
