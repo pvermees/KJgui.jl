@@ -227,7 +227,6 @@ function MakiePlot!(ctrl::AbstractDict,
         ax.titlesize = titlefontsize
     end
     interactive_windows(ctrl,x)
-    
 end
 export MakiePlot!
 
@@ -258,15 +257,18 @@ function add_listener!(ctrl::AbstractDict,
     fresh = true
     windows = []
     boxes = []
-    buffer = i2t(samp,1)
     x1,x2,xm,xM = 0.0,0.0,0.0,0.0
     register_interaction!(ax,:select_window) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftdragstart
             x1 = event.data[1]
-            if x1 < obs_t0.val[1][1] - buffer
+            t0 = obs_t0.val[1][1]
+            max_blk = i2t(samp,samp.bwin[end][2])
+            min_sig = i2t(samp,samp.swin[1][1])
+            min_buf = i2t(samp,1)
+            if x1 < t0 - max(min_buf,(t0-max_blk)/3)
                 selected = "blank"
                 boxes = bwin
-            elseif x1 > obs_t0.val[1][1] + buffer
+            elseif x1 > t0 + max(min_buf,(min_sig-t0)/3)
                 selected = "signal"
                 boxes = swin
             else
