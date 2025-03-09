@@ -1,22 +1,18 @@
 function GUIinitPlotter!(ctrl::AbstractDict)
     ctrl["fig"] = Figure()
-    grid = ctrl["fig"][1,1] = GridLayout()
-    prev = Button(ctrl["fig"], label = "<")
-    next = Button(ctrl["fig"], label = ">")
-    ctrl["ax"] = Axis(ctrl["fig"])
-    Makie.deactivate_interaction!(ctrl["ax"], :rectanglezoom)
-    GUIplotter!(ctrl)
+    ctrl["fig"][1,1] = grid = GridLayout()
+    prev = Button(grid[1:2,1], label = "<")
     on(prev.clicks) do _
         GUIprevious!(ctrl)
     end
+    ctrl["ax"] = Axis(grid[1:2,2])
+    Makie.deactivate_interaction!(ctrl["ax"], :rectanglezoom)
+    next = Button(grid[1:2,3], label = ">")
     on(next.clicks) do _
         GUInext!(ctrl)
     end
-    grid[1:2, 1] = prev
-    grid[1:2, 2] = ctrl["ax"]
-    grid[1:2, 3] = next
+    GUIplotter!(ctrl)
     display(ctrl["fig"])
-    return nothing
 end
 export GUIinitPlotter!
 
@@ -146,5 +142,7 @@ function GUIempty!(ctrl::AbstractDict)
     if "legend" in keys(ctrl)
         delete!(ctrl["legend"])
     end
-    empty!(ctrl["ax"])
+    if "ax" in keys(ctrl)
+        empty!(ctrl["ax"])
+    end
 end

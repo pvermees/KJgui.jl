@@ -9,7 +9,6 @@ if !(@isdefined rerun)
 end
 
 rerun = true
-
 if false
     KJ.TUI(KJgui;logbook="logs/test.log",reset=true)
 else
