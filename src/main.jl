@@ -62,7 +62,7 @@ function extend!(_KJ::AbstractDict)
 
     updateTree!(_KJ["tree"],"setWin";
                 message = 
-                "Choose an option to set the blank and/or signal window(s):\n" * 
+                "Choose an option to set t0 and/or the blank and/or signal window(s):\n" * 
                 "a: Automatic (current sample)\n" * 
                 "A: Automatic (all samples)\n" *
                 "x: Exit this menu and use the mouse to select your windows " *
@@ -72,9 +72,10 @@ function extend!(_KJ::AbstractDict)
                 "   m + drag: Manually set a multi-part window (this sample)\n" * 
                 "?: Help",
                 help =
-                "Specify the blank and signal windows by dragging a rectangle " *
-                "across the relevants part of the time-resolved signal plot, " *
-                "or trust KJ to choose the blank windows automatically. " *
+                "Specify 'time zero' by dragging a line, or the blank and " *
+                "signal windows by dragging a rectangle across the " *
+                "relevants part of the time-resolved signal plot, " *
+                "or trust KJ to choose them automatically. " *
                 "The blanks of all the analyses (samples + standards) will " *
                 "be combined and interpolated under the signal.",
                 action = Dict(
