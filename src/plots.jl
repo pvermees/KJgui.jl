@@ -39,13 +39,13 @@ end
 
 function GUIconcentrationPlotter!(ctrl::AbstractDict)
     samp = ctrl["run"][ctrl["i"]]
-    if (samp.group in keys(ctrl["glass"])) & !isnothing(ctrl["blank"])
-        MakiePlot!(ctrl,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
-                   den=ctrl["den"],transformation=ctrl["transformation"],
-                   i=ctrl["i"])
-    else
+    if isnothing(ctrl["blank"])
         MakiePlot!(ctrl;den=ctrl["den"],
                    transformation=ctrl["transformation"],
+                   i=ctrl["i"])
+    else
+        MakiePlot!(ctrl,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
+                   den=ctrl["den"],transformation=ctrl["transformation"],
                    i=ctrl["i"])
     end
 end
