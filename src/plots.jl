@@ -1,8 +1,3 @@
-function GUIviewer!(ctrl::AbstractDict)
-    GUIinitPlotter!(ctrl)
-    return "view"
-end
-
 function GUIinitPlotter!(ctrl::AbstractDict)
     ctrl["fig"] = Figure()
     grid = ctrl["fig"][1,1] = GridLayout()
@@ -21,6 +16,7 @@ function GUIinitPlotter!(ctrl::AbstractDict)
     grid[1:2, 2] = ctrl["ax"]
     grid[1:2, 3] = next
     display(ctrl["fig"])
+    return nothing
 end
 export GUIinitPlotter!
 
@@ -40,11 +36,17 @@ end
 function GUIconcentrationPlotter!(ctrl::AbstractDict)
     samp = ctrl["run"][ctrl["i"]]
     if isnothing(ctrl["blank"])
-        MakiePlot!(ctrl;den=ctrl["den"],
+        channels = getChannels(samp)
+        MakiePlot!(ctrl,
+                   channels;
+                   den=ctrl["den"],
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
     else
-        MakiePlot!(ctrl,ctrl["blank"],ctrl["par"],ctrl["internal"][1];
+        MakiePlot!(ctrl,
+                   ctrl["blank"],
+                   ctrl["par"],
+                   ctrl["internal"][1];
                    den=ctrl["den"],transformation=ctrl["transformation"],
                    i=ctrl["i"])
     end
@@ -53,15 +55,21 @@ end
 function GUIgeochronPlotter!(ctrl::AbstractDict)
     samp = ctrl["run"][ctrl["i"]]
     if isnothing(ctrl["blank"])
-        MakiePlot!(ctrl,ctrl["channels"];
+        MakiePlot!(ctrl,
+                   collect(values(ctrl["channels"]));
                    den=ctrl["den"],
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
     else
-        anchors = KJ.getAnchors(ctrl["method"],ctrl["standards"],ctrl["glass"])
-        MakiePlot!(ctrl,ctrl["method"],ctrl["channels"],ctrl["blank"],
-                   ctrl["par"],ctrl["standards"],ctrl["glass"];
-                   den=ctrl["den"],
+        standards = collect(keys(ctrl["standards"]))
+        glass = collect(keys(ctrl["glass"]))
+        MakiePlot!(ctrl,
+                   ctrl["method"],
+                   ctrl["channels"],
+                   ctrl["blank"],
+                   ctrl["par"],
+                   standards,
+                   glass;
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
     end
@@ -70,13 +78,13 @@ end
 function GUInext!(ctrl::AbstractDict)
     ctrl["i"] += 1
     if ctrl["i"]>length(ctrl["run"]) ctrl["i"] = 1 end
-    return GUIplotter!(ctrl)
+    GUIplotter!(ctrl)
 end
 
 function GUIprevious!(ctrl::AbstractDict)
     ctrl["i"] -= 1
     if ctrl["i"]<1 ctrl["i"] = length(ctrl["run"]) end
-    return GUIplotter!(ctrl)
+    GUIplotter!(ctrl)
 end
 
 function GUIgoto!(ctrl::AbstractDict,
@@ -112,13 +120,13 @@ end
 function GUIoneAutoWindow!(ctrl::AbstractDict)
     setBwin!(ctrl["run"][ctrl["i"]])
     setSwin!(ctrl["run"][ctrl["i"]])
-    return GUIplotter!(ctrl)
+    GUIplotter!(ctrl)
 end
 
 function GUIallAutoWindow!(ctrl::AbstractDict)
     setBwin!(ctrl["run"])
     setSwin!(ctrl["run"])
-    return GUIplotter!(ctrl)
+    GUIplotter!(ctrl)
 end
 
 function GUItransformation!(ctrl::AbstractDict,

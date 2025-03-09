@@ -15,65 +15,14 @@ function MakiePlot!(ctrl::AbstractDict,
     Sanchors = getAnchors(method,standards,false)
     Ganchors = getAnchors(method,glass,true)
     anchors = merge(Sanchors,Ganchors)
-    MakiePlot!(ctrl,channels,blank,pars,anchors;
+    MakiePlot!(ctrl,
+               channels,
+               blank,
+               pars,
+               anchors;
                num=num,den=den,transformation=transformation,
                seriestype=seriestype,
                ms=ms,ma=ma,xlim=xlim,ylim=ylim,i=i,
-               show_title=show_title,
-               titlefontsize=titlefontsize)
-end
-function MakiePlot!(ctrl::AbstractDict,
-                    method::AbstractString,
-                    channels::AbstractDict,
-                    blank::AbstractDataFrame,
-                    pars::NamedTuple,
-                    standards::AbstractDict,
-                    glass::AbstractDict;
-                    num=nothing,den=ctrl["den"],
-                    transformation=nothing,
-                    seriestype=:scatter,
-                    ms=5,ma=1,xlim=:auto,ylim=:auto,
-                    linecol="black",linestyle=:solid,i=nothing,
-                    show_title=true,
-                    titlefontsize=14)
-    MakiePlot!(ctrl,method,channels,blank,pars,
-               collect(keys(standards)),collect(keys(glass));
-               num=num,den=den,transformation=transformation,
-               seriestype=seriestype,ms=ms,ma=ma,
-               xlim=xlim,ylim=ylim,
-               linecol=linecol,linestyle=linestyle,i=i,
-               show_title=show_title,
-               titlefontsize=titlefontsize)
-end
-function MakiePlot!(ctrl::AbstractDict,
-                    channels::AbstractDict;
-                    num=nothing,den=ctrl["den"],
-                    transformation=nothing,
-                    seriestype=:scatter,
-                    ms=5,ma=1,xlim=:auto,ylim=:auto,
-                    display=true,i=nothing,
-                    show_title=true,
-                    titlefontsize=14)
-    MakiePlot!(ctrl,collect(values(channels));
-               num=num,den=den,transformation=transformation,
-               seriestype=seriestype,
-               ms=ms,ma=ma,xlim=xlim,ylim=ylim,i=i,
-               show_title=show_title,
-               titlefontsize=titlefontsize)
-end
-function MakiePlot!(ctrl::AbstractDict;
-                    num=nothing,den=ctrl["den"],
-                    transformation=nothing,
-                    seriestype=:scatter,
-                    ms=5,ma=1,xlim=:auto,ylim=:auto,
-                    display=true,i=nothing,
-                    show_title=true,
-                    titlefontsize=14)
-    MakiePlot!(ctrl,getChannels(samp);
-               num=num,den=den,transformation=transformation,
-               seriestype=seriestype,
-               ms=ms,ma=ma,
-               xlim=xlim,ylim=ylim,i=i,
                show_title=show_title,
                titlefontsize=titlefontsize)
 end
@@ -97,19 +46,21 @@ function MakiePlot!(ctrl::AbstractDict,
 
     if samp.group == "sample"
 
-        MakiePlot!(ctrl,channels;
+        MakiePlot!(ctrl,
+                   collect(values(channels));
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,
-                   xlim=xlim,ylim=ylim,display=display,i=i,
+                   xlim=xlim,ylim=ylim,i=i,
                    show_title=show_title,
                    titlefontsize=titlefontsize)
         
     else
 
-        MakiePlot!(ctrl,channels;
+        MakiePlot!(ctrl,
+                   collect(values(channels));
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
-                   display=display,i=i,show_title=show_title,
+                   i=i,show_title=show_title,
                    titlefontsize=titlefontsize)
 
         MakiePlotFitted!(ctrl["ax"],samp,blank,pars,channels,anchors;
@@ -128,7 +79,6 @@ end
 function MakiePlot!(ctrl::AbstractDict,
                     blank::AbstractDataFrame,
                     pars::AbstractVector,
-                    elements::AbstractDataFrame,
                     internal::AbstractString;
                     num=nothing,den=ctrl["den"],
                     transformation=nothing,
@@ -144,7 +94,7 @@ function MakiePlot!(ctrl::AbstractDict,
         MakiePlot!(ctrl;
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,
-                   xlim=xlim,ylim=ylim,display=display,i=i,
+                   xlim=xlim,ylim=ylim,i=i,
                    show_title=show_title,
                    titlefontsize=titlefontsize)
         
@@ -153,37 +103,22 @@ function MakiePlot!(ctrl::AbstractDict,
         MakiePlot!(ctrl;
                    num=num,den=den,transformation=transformation,
                    seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
-                   display=display,i=i,show_title=show_title,
-                   titlefontsize=titlefontsize)
+                   i=i,show_title=show_title,titlefontsize=titlefontsize)
 
-        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,elements,internal;
+        MakiePlotFitted!(ctrl["ax"],samp,blank,pars,internal;
                          num=num,den=den,transformation=transformation,
                          linecolor=linecol,linestyle=linestyle)
         
     end
 
-    MakiePlotFittedBlank!(ctrl["ax"],samp,blank;
+    MakiePlotFittedBlank!(ctrl["ax"],
+                          samp,
+                          blank;
                           num=num,den=den,transformation=transformation,
                           linecolor=linecol,linestyle=linestyle)
 
 end
-function MakiePlot!(ctrl::AbstractDict,
-                    blank::AbstractDataFrame,
-                    pars::AbstractVector,
-                    internal::AbstractString;
-                    num=nothing,den=ctrl["den"],
-                    transformation=nothing,
-                    seriestype=:scatter,
-                    ms=5,ma=1,xlim=:auto,ylim=:auto,
-                    linecol="black",linestyle=:solid,i=nothing,
-                    show_title=true,titlefontsize=14)
-    elements = channels2elements(samp)
-    MakiePlot!(ctrl,blank,pars,elements,internal;
-               num=num,den=den,transformation=transformation,
-               seriestype=seriestype,ms=ms,ma=ma,xlim=xlim,ylim=ylim,
-               linecol=linecol,linestyle=linestyle,i=i,
-               show_title=show_title,titlefontsize=titlefontsize)
-end
+# helper
 function MakiePlot!(ctrl::AbstractDict,
                     channels::AbstractVector;
                     num=nothing,den=ctrl["den"],
@@ -362,10 +297,10 @@ function MakiePlotFitted!(ax::Axis,
                           samp::Sample,
                           blank::AbstractDataFrame,
                           pars::AbstractVector,
-                          elements::AbstractDataFrame,
                           internal::AbstractString;
                           num=nothing,den=nothing,transformation=nothing,
                           linecolor="black",linestyle=:solid)
+    elements = channels2elements(samp)
     pred = predict(samp,pars,blank,elements,internal)
     MakiePlotFitted!(ax,samp,pred;
                      num=num,den=den,transformation=transformation,
