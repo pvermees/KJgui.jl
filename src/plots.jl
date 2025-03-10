@@ -1,3 +1,8 @@
+function GUIviewer!(ctrl::AbstractDict)
+    GUIinitPlotter!(ctrl)
+    return "view"
+end
+
 function GUIinitPlotter!(ctrl::AbstractDict)
     ctrl["fig"] = Figure()
     ctrl["fig"][1,1] = grid = GridLayout()
