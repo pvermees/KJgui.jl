@@ -151,3 +151,4 @@ function GUIempty!(ctrl::AbstractDict)
         empty!(ctrl["ax"])
     end
 end
+export GUIempty!
