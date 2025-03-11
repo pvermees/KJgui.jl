@@ -161,16 +161,19 @@ function MakiePlot!(ctrl::AbstractDict,
         ax.title = title
         ax.titlesize = titlefontsize
     end
-    interactive_windows(ctrl,x)
+    ylim_dat = [minimum(Matrix(ty)),maximum(Matrix(ty))]
+    interactive_windows(ctrl,x,ylim_dat)
 end
 export MakiePlot!
 
 function interactive_windows(ctrl::AbstractDict,
-                             x::AbstractVector)
+                             x::AbstractVector,
+                             ylim_dat::AbstractVector)
     samp = ctrl["run"][ctrl["i"]]
     ax = ctrl["ax"]
     reset_limits!(ax)
-    ylims = collect(ax.yaxis.attributes.limits.val)
+    ylim_ax = collect(ax.yaxis.attributes.limits.val)
+    ylims = @. (ylim_dat + ylim_ax)/2
     if :select_window in keys(interactions(ax))
         Makie.deregister_interaction!(ax, :select_window)
     end
