@@ -35,7 +35,7 @@ function MakieTest()
                         "P"=>"Lu175 -> 175")
         standards = Dict("Hogsbo_gt" => "hogsbo")
         glass = Dict("NIST612" => "NIST612p")
-        den = nothing
+        den = "Hf176 -> 258"
     end
     #blk, fit = KJ.process!(myrun,method,channels,standards,glass;
     #                       nblank=2,ndrift=1,ndown=0)
@@ -50,7 +50,7 @@ function MakieTest()
         "PAcutoff" => nothing,
         "blank" => nothing, #blk,
         "par" => nothing, #fit,
-        "transformation" => "sqrt"
+        "transformation" => "log"
     )
     GUIinitPlotter!(ctrl)
 end
@@ -59,5 +59,5 @@ function ExtensionTest()
     KJ.TUI(KJgui)#,logbook="logs/test.log")
 end
 
-#@testset "Makie test" begin MakieTest() end
-@testset "Extension test" begin ExtensionTest() end
+@testset "Makie test" begin MakieTest() end
+#@testset "Extension test" begin ExtensionTest() end
