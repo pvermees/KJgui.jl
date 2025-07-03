@@ -6,7 +6,7 @@ function GUIread!(ctrl::AbstractDict)
             return GUIloadICPfile!(ctrl)
         end
     else
-        return "instrument"
+        return "format"
     end
 end
 
