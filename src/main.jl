@@ -18,14 +18,11 @@ function extend!(_KJ::AbstractDict)
                     "s" => GUIsaveTemplate
                 ))
 
-    updateTree!(_KJ["tree"],"format";
+    updateTree!(_KJ["tree"],"export";
                 action = Dict(
                     "c" => GUIexport2csv,
                     "j" => GUIexport2json
                 ))
-
-    updateTree!(_KJ["tree"],"export";
-                action = GUIsubset!)
 
     _KJ["tree"]["top"].action["v"] = GUIviewer!
 
