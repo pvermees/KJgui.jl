@@ -23,56 +23,10 @@ export GUIinitPlotter!
 
 function GUIplotter!(ctrl::AbstractDict)
     GUIempty!(ctrl)
-    if ctrl["method"] == "concentrations"
-        GUIconcentrationPlotter!(ctrl)
-    else
-        GUIgeochronPlotter!(ctrl)
-    end
+    MakiePlot!(ctrl)
     ctrl["legend"] = axislegend(ctrl["ax"];position=:lt)
-    if !isnothing(ctrl["PAcutoff"])
-        GUIaddPAline!(ctrl["PAcutoff"])
-    end
-end
-
-function GUIconcentrationPlotter!(ctrl::AbstractDict)
-    samp = ctrl["run"][ctrl["i"]]
-    if isnothing(ctrl["blank"])
-        channels = getChannels(samp)
-        MakiePlot!(ctrl,
-                   channels;
-                   den=ctrl["den"],
-                   transformation=ctrl["transformation"],
-                   i=ctrl["i"])
-    else
-        MakiePlot!(ctrl,
-                   ctrl["blank"],
-                   ctrl["par"],
-                   ctrl["internal"][1];
-                   den=ctrl["den"],transformation=ctrl["transformation"],
-                   i=ctrl["i"])
-    end
-end
-
-function GUIgeochronPlotter!(ctrl::AbstractDict)
-    samp = ctrl["run"][ctrl["i"]]
-    if isnothing(ctrl["blank"])
-        MakiePlot!(ctrl,
-                   collect(values(ctrl["channels"]));
-                   den=ctrl["den"],
-                   transformation=ctrl["transformation"],
-                   i=ctrl["i"])
-    else
-        standards = collect(keys(ctrl["standards"]))
-        glass = collect(keys(ctrl["glass"]))
-        MakiePlot!(ctrl,
-                   ctrl["method"],
-                   ctrl["channels"],
-                   ctrl["blank"],
-                   ctrl["par"],
-                   standards,
-                   glass;
-                   transformation=ctrl["transformation"],
-                   i=ctrl["i"])
+    if !isnothing(ctrl["method"].PAcutoff)
+        GUIaddPAline!(ctrl["method"].PAcutoff)
     end
 end
 
@@ -100,17 +54,15 @@ end
 function GUIratios!(ctrl::AbstractDict,
                     response::AbstractString)
     if response=="n"
-        ctrl["den"] = nothing
+        ctrl["den"] = ""
     elseif response=="x"
         return "xx"
     else
         i = parse(Int,response)
-        if isa(ctrl["channels"],AbstractVector)
-            channels = ctrl["channels"]
-        elseif isa(ctrl["channels"],AbstractDict)
-            channels = collect(values(ctrl["channels"]))
-        else
+        if isnothing(ctrl["method"])
             channels = getChannels(ctrl["run"])
+        else
+            channels = getChannels(ctrl["method"])
         end
         ctrl["den"] = channels[i]
     end
@@ -137,7 +89,7 @@ function GUItransformation!(ctrl::AbstractDict,
     elseif response=="s"
         ctrl["transformation"] = "sqrt"
     else
-        ctrl["transformation"] = nothing
+        ctrl["transformation"] = ""
     end
     GUIplotter!(ctrl)
     return "x"
