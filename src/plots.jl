@@ -23,20 +23,20 @@ export GUIinitPlotter!
 
 function GUIplotter!(ctrl::AbstractDict)
     GUIempty!(ctrl)
-    if ctrl["method"] == "concentrations"
+    if ctrl["method"].name == "concentrations"
         GUIconcentrationPlotter!(ctrl)
     else
         GUIgeochronPlotter!(ctrl)
     end
     ctrl["legend"] = axislegend(ctrl["ax"];position=:lt)
-    if !isnothing(ctrl["PAcutoff"])
-        GUIaddPAline!(ctrl["PAcutoff"])
+    if !isnothing(ctrl["method"].PAcutoff)
+        GUIaddPAline!(ctrl["method"].PAcutoff)
     end
 end
 
 function GUIconcentrationPlotter!(ctrl::AbstractDict)
     samp = ctrl["run"][ctrl["i"]]
-    if isnothing(ctrl["blank"])
+    if isnothing(ctrl["fit"])
         channels = getChannels(samp)
         MakiePlot!(ctrl,
                    channels;
@@ -45,19 +45,20 @@ function GUIconcentrationPlotter!(ctrl::AbstractDict)
                    i=ctrl["i"])
     else
         MakiePlot!(ctrl,
-                   ctrl["blank"],
-                   ctrl["par"],
-                   ctrl["internal"][1];
+                   ctrl["fit"].blank,
+                   ctrl["fit"].par,
+                   ctrl["method"].internal[1];
                    den=ctrl["den"],transformation=ctrl["transformation"],
                    i=ctrl["i"])
     end
 end
 
 function GUIgeochronPlotter!(ctrl::AbstractDict)
-    samp = ctrl["run"][ctrl["i"]]
-    if isnothing(ctrl["blank"])
+    return nothing
+    channels = getChannels(ctrl["fit"].method)
+    if isnothing(ctrl["fit"])
         MakiePlot!(ctrl,
-                   collect(values(ctrl["channels"]));
+                   channels,
                    den=ctrl["den"],
                    transformation=ctrl["transformation"],
                    i=ctrl["i"])
@@ -66,9 +67,9 @@ function GUIgeochronPlotter!(ctrl::AbstractDict)
         glass = collect(keys(ctrl["glass"]))
         MakiePlot!(ctrl,
                    ctrl["method"],
-                   ctrl["channels"],
-                   ctrl["blank"],
-                   ctrl["par"],
+                   channels,
+                   ctrl["fit"].blank,
+                   ctrl["fit"].par,
                    standards,
                    glass;
                    transformation=ctrl["transformation"],
