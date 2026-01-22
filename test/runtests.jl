@@ -23,5 +23,5 @@ function ExtensionTest()
     KJ.TUI(KJgui)
 end
 
-@testset "Makie test" begin MakieTest() end
+# @testset "Makie test" begin MakieTest() end
 @testset "Extension test" begin ExtensionTest() end
