@@ -20,7 +20,7 @@ function MakieTest()
 end
 
 function ExtensionTest()
-    KJ.TUI(KJgui)
+    KJ.TUI(KJgui;debug=true)
 end
 
 @testset "Makie test" begin MakieTest() end
