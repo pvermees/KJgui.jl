@@ -13,25 +13,31 @@ function MakiePlot!(ctrl::AbstractDict;
     else
         channels = KJ.getChannels(ctrl["method"])
     end
-    p = KJ.prep_plot(samp,channels;
-                     den=ctrl["den"],
-                     transformation=ctrl["transformation"])
-    x, ty, xlab, ylab, offset = p
+    offset = KJ.get_offset(samp;
+                           method=ctrl["method"],
+                           fit=ctrl["fit"],
+                           channels=channels,
+                           transformation=ctrl["transformation"],
+                           den=ctrl["den"])
+    x, y, xlab, ylab = KJ.prep_plot(samp,channels;
+                                    den=ctrl["den"],
+                                    transformation=ctrl["transformation"],
+                                    offset=offset)
     ax.xlabel = xlab
     ax.ylabel = ylab
     ax.tellheight = false
-    n_cols = size(ty,2)
+    n_cols = size(y,2)
     Random.seed!(4)
     for i in 1:n_cols
-        good = isfinite.(ty[:,i])
+        good = isfinite.(y[:,i])
         if seriestype == :scatter
-            scatter!(ax, x[good], ty[good,i];
+            scatter!(ax, x[good], y[good,i];
                      color = RGBf(rand(3)...),
                      markersize=ms, 
                      strokewidth=ma, 
-                     label=names(ty)[i])
+                     label=names(y)[i])
         else
-            lines!(ax, x[good], ty[good,i]; linewidth=ms)
+            lines!(ax, x[good], y[good,i]; linewidth=ms)
         end
     end
     if xlim != :auto
@@ -44,7 +50,7 @@ function MakiePlot!(ctrl::AbstractDict;
         ax.title = string(ctrl["i"]) * ". " * samp.sname * " [" * samp.group * "]"
         ax.titlesize = titlefontsize
     end
-    ylim_dat = [minimum(Matrix(ty)),maximum(Matrix(ty))]
+    ylim_dat = [minimum(Matrix(y)),maximum(Matrix(y))]
     interactive_windows(ctrl,x,ylim_dat)
 end
 export MakiePlot!

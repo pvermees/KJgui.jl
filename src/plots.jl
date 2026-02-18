@@ -25,9 +25,6 @@ function GUIplotter!(ctrl::AbstractDict)
     GUIempty!(ctrl)
     MakiePlot!(ctrl)
     ctrl["legend"] = axislegend(ctrl["ax"];position=:lt)
-    if !isnothing(ctrl["method"].PAcutoff)
-        GUIaddPAline!(ctrl["method"].PAcutoff)
-    end
 end
 
 function GUInext!(ctrl::AbstractDict)
