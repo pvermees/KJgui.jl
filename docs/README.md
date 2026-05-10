@@ -2,6 +2,10 @@
 
 The purpose of the GUI is to design a user-friendly visualisation and analysis tool for data reduction using the KJ algorithm. This is how we foresee the program to work (with simplicity in mind).
 
+## SG's Mock-up
+
+![mockup_SG.svg](mockup_SG.svg)
+
 At start-up, a menu bar appears with roll-out menus. The order of the menus reflect the order of the processing steps.
 
 ## Data Entry
@@ -61,10 +65,6 @@ to be discussed later
 ## Info
 
 links to literature / github pages. Credits is an acknowledgement box.
-
-## SG's Mock-up
-
-![mockup_SG.svg](mockup_SG.svg)
 
 # PV's additional thoughts
 
