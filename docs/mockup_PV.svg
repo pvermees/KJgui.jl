@@ -113,8 +113,8 @@
      fit-margin-right="0"
      fit-margin-bottom="0"
      inkscape:zoom="1.4873021"
-     inkscape:cx="259.19415"
-     inkscape:cy="281.71815"
+     inkscape:cx="599.40748"
+     inkscape:cy="70.597628"
      inkscape:window-width="1436"
      inkscape:window-height="861"
      inkscape:window-x="0"
@@ -124,7 +124,14 @@
      id="g8"
      inkscape:groupmode="layer"
      inkscape:label="mockup"
-     transform="matrix(1.3333333,0,0,-1.3333333,0,595.27465)"><g
+     transform="matrix(1.3333333,0,0,-1.3333333,0,595.27465)"><rect
+       style="fill:#fffff1;stroke:none;stroke-width:2.42168"
+       id="rect1922"
+       width="865.40137"
+       height="430.67642"
+       x="-1.7053026e-13"
+       y="-445.70444"
+       transform="scale(1,-1)" /><g
        id="g10"><g
          id="g12"
          clip-path="url(#clipPath16)"><path
