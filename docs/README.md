@@ -66,7 +66,7 @@ to be discussed later
 
 links to literature / github pages. Credits is an acknowledgement box.
 
-# PV's additional thoughts
+# PV's mock-up and additional thoughts
 
 The layout proposed by Stijn is sensible and similar to the LADR software that he currently uses. I will sketch an alternative layout that stays closer to KJ.jl's existing TUI. This alternative layout would consist of three basic elements:
 
