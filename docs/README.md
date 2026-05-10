@@ -64,7 +64,7 @@ links to literature / github pages. Credits is an acknowledgement box.
 
 ## SG's Mock-up
 
-![mockup_SG.md](mockup_SG.md)
+![mockup_SG.svg](mockup_SG.svg)
 
 # PV's additional thoughts
 
@@ -78,4 +78,4 @@ The layout proposed by Stijn is sensible and similar to the LADR software that h
 
 Note that SG's layout contains exactly the same elements, but just shuffles them around. Perhaps the "TUI-inspired" GUI can be used as a stepping stone towards SG's GUI? Or perhaps we can give the user the choice between both of them?
 
-![mockup_PV.md](mockup_PV.md)
+![mockup_PV.svg](mockup_PV.svg)
