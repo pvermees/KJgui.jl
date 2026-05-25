@@ -4,24 +4,16 @@ version = "0.8.2"
 authors = ["pvermees <p.vermeesch@ucl.ac.uk>"]
 
 [deps]
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
-Gtk4 = "9db2cae5-386f-4011-9d63-a5602296539b"
-Infiltrator = "5903a43b-9cc3-4c30-8d17-598619ec4e9b"
 KJ = "c976074e-2e5b-4ac6-9301-394412a2f0b0"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
-CSV = "0.10.15"
 DataFrames = "1.8.1"
 GLMakie = "0.13.8"
-Gtk4 = "0.7.11"
-Infiltrator = "1.9.7"
 KJ = "0.8.2"
 Makie = "0.24.8"
-Random = "1.11.0"
 julia = "1.10"
 
 [extras]
