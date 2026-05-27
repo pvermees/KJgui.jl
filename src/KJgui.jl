@@ -1,11 +1,10 @@
 module KJgui
 
-using Infiltrator, Gtk4, Makie, GLMakie, KJ, DataFrames
-import Random, CSV
+using GLMakie, Makie, KJ, DataFrames
 
-include("dialogs.jl")
-include("main.jl")
-include("MakiePlots.jl")
-include("plots.jl")
+include("recipes.jl")
+include("gui.jl")
+
+export run_gui
 
 end
