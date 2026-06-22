@@ -1,183 +1,137 @@
 """
-    Popup(fig::Figure; size=(420, 420), title="")
+A floating popup on a Figure: half-transparent backdrop tinting the rest
+of the figure plus an opaque-white body centred over it. The body holds a
+`GridLayout` for the caller's widgets.
 
-A floating modal overlay scene on top of `fig`, with its own `GridLayout`
-parented to a `campixel!` Scene so any Makie block (Menu, Checkbox, Button,
-Label, …) drops into `popup.layout[i, j]` like a normal figure cell.
+Three nested scenes:
+- `overlay` — full-figure viewport, `clear=false`, z=1000, holds the
+  half-transparent backdrop poly. Lifts everything below into the
+  foreground render layer.
+- `body` — viewport = body rect, `clear=true`. The routing cover: its
+  positive world-z + `clear=true` makes `covers_pointer(body)` true,
+  so widgets in sibling subtrees stop receiving pointer input while
+  the popup is open.
+- `body_widgets` — child of `body`, viewport = full figure, holds the
+  widgets. The full-figure viewport is necessary because each Block
+  builds a subscene whose viewport is set to the block's computedbbox
+  treated as *figure-pixel* coords; that only renders correctly when
+  bboxes are in figure coords, which requires the widget scene's
+  viewport origin to be (0, 0). Visibility cascades from `body`, so
+  widgets hide together with the body.
 
-Borrows the `GridLayout(; bbox=…)` + `layout.parent = scene` trick from
-Makie's `Subfigure`: the layout is given an explicit bbox observable, its
-parent is the overlay scene, and the bbox follows the popup body so resizes
-work.
+Clicks outside the body rect (but still on the backdrop) fall through to
+the underlying figure — the popup is not full-figure modal.
 
-Returns a NamedTuple with:
-- `scene`        the overlay scene
-- `layout`       the GridLayout for content (top-aligned, padded)
-- `title_label`  Label block for the title
-- `close_btn`    × button in the top-right corner; pre-wired to close
-- `open!`        function to show the popup
-- `close!`       function to hide the popup
-- `is_open`      Observable{Bool} mirroring visibility
+`size === nothing` (default) sizes the body to the layout's natural extent
+(floored at `min_size`); pass a `(w, h)` tuple for a fixed size.
 """
-function Popup(fig::Figure; size::Tuple{Real,Real}=(420, 420), title::AbstractString="")
+struct Popup
+    scene::Scene
+    layout::GridLayout
+    title_label::Label
+    close_btn::Button
+end
+
+"""
+    Popup(fig::Figure; size=nothing, min_size=(240, 120), title="")
+"""
+function Popup(fig::Figure;
+               size::Union{Nothing,Tuple{Real,Real}}=nothing,
+               min_size::Tuple{Real,Real}=(240, 120),
+               title::AbstractString="")
     parent = fig.scene
+
+    HEADER_H = 36
+    PAD      = 12
+
     overlay = Scene(parent;
         camera=campixel!, clear=false, viewport=parent.viewport)
-    # Push the entire overlay scene above every block in the parent — same
-    # trick Menu uses for its dropdown (see makielayout/blocks/menu.jl:93).
-    # Without this, sibling Block subscenes drawn later in the tree paint
-    # over the popup body and its content.
     translate!(overlay, 0, 0, 1000)
     overlay.visible[] = false
-
-    # Body rect centred on the figure; recomputed if the figure resizes.
-    body_bbox = lift(parent.viewport) do vp
-        fw, fh = vp.widths
-        bw, bh = Float32(size[1]), Float32(size[2])
-        x = (fw - bw) / 2
-        y = (fh - bh) / 2
-        return Rect2f(x, y, bw, bh)
-    end
-
-    # Backdrop covering the whole figure — half-transparent, modal-ish.
     backdrop_rect = lift(vp -> Rect2f(0, 0, vp.widths...), parent.viewport)
     poly!(overlay, backdrop_rect; color=(:black, 0.35), inspectable=false)
 
-    # Popup body
-    poly!(overlay, body_bbox;
-        color=:white, strokecolor=:black, strokewidth=2, inspectable=false)
+    layout_autosize = Observable((Float32(min_size[1]), Float32(min_size[2])))
+    body_size = if size === nothing
+        lift(layout_autosize) do asz
+            (max(Float32(min_size[1]), Float32(asz[1]) + 2*PAD),
+             max(Float32(min_size[2]), Float32(asz[2]) + HEADER_H + 2*PAD))
+        end
+    else
+        Observable((Float32(size[1]), Float32(size[2])))
+    end
 
-    # The GridLayout — bbox follows the body minus padding for the header bar.
-    HEADER_H = 36
-    PAD      = 12
-    layout_bbox = lift(body_bbox) do b
-        x, y = b.origin
-        w, h = b.widths
-        Rect2f(x + PAD, y + PAD, w - 2PAD, h - HEADER_H - PAD)
+    body_viewport = lift(parent.viewport, body_size) do vp, (bw, bh)
+        x = round(Int, (vp.widths[1] - bw) / 2)
+        y = round(Int, (vp.widths[2] - bh) / 2)
+        Rect2i(x, y, round(Int, bw), round(Int, bh))
+    end
+
+    body = Scene(overlay;
+        camera=campixel!, clear=true, viewport=body_viewport,
+        backgroundcolor=RGBAf(1, 1, 1, 1))
+    # Opaque white plot living at world-z=1000 alongside the widgets, so
+    # the body's white participates in the cross-scene z-sorted plot
+    # render rather than just the setup-pass clear (which dashboard plots
+    # at z=0 can overdraw inside the body's pixel region).
+    # In body's local space (campixel + viewport=body_rect maps local
+    # (0,0) to figure pixel `body_viewport.origin`).
+    body_fill_local = lift(body_size) do (bw, bh); Rect2f(0, 0, bw, bh); end
+    poly!(body, body_fill_local; color=:white, strokewidth=0,
+        inspectable=false)
+    poly!(body, body_fill_local;
+        color=:transparent, strokecolor=:black, strokewidth=2,
+        inspectable=false)
+
+    # Widget scene: full-figure viewport so Block subscenes (which
+    # interpret their viewport as figure-pixel coords) render at the
+    # correct position. Visibility cascades from `body`.
+    body_widgets = Scene(body;
+        camera=campixel!, clear=false, viewport=parent.viewport)
+
+    # All widget bboxes are in figure-pixel coords (standard Makie
+    # convention) so Block subscene positioning Just Works.
+    layout_bbox = lift(body_viewport) do vp
+        x, y = vp.origin
+        w, h = vp.widths
+        Rect2f(x + PAD, y + PAD, w - 2*PAD, h - HEADER_H - PAD)
     end
     layout = GridLayout(; bbox=layout_bbox)
-    layout.parent = overlay
-
-    # Header (title + close button) lives ABOVE the content layout, in its
-    # own positioned blocks rather than the GridLayout so the user's content
-    # always starts at the top of the grid.
-    title_bbox = lift(body_bbox) do b
-        x, y = b.origin
-        w, h = b.widths
-        Rect2f(x + PAD, y + h - HEADER_H + 4, w - HEADER_H - 2PAD, HEADER_H - 8)
+    layout.parent = body_widgets
+    on(layout.layoutobservables.autosize) do asz
+        w = something(asz[1], min_size[1])
+        h = something(asz[2], min_size[2])
+        layout_autosize[] = (Float32(w), Float32(h))
     end
-    title_label = Label(overlay; text=title, fontsize=14, font=:bold,
+
+    title_bbox = lift(body_viewport) do vp
+        x, y = vp.origin
+        w, h = vp.widths
+        Rect2f(x + PAD, y + h - HEADER_H + 4, w - HEADER_H - 2*PAD, HEADER_H - 8)
+    end
+    title_label = Label(body_widgets; text=title, fontsize=14, font=:bold,
         halign=:left, tellwidth=false, tellheight=false)
     title_label.layoutobservables.suggestedbbox[] = title_bbox[]
     on(title_bbox) do r; title_label.layoutobservables.suggestedbbox[] = r; end
 
-    close_bbox = lift(body_bbox) do b
-        x, y = b.origin
-        w, h = b.widths
+    close_bbox = lift(body_viewport) do vp
+        x, y = vp.origin
+        w, h = vp.widths
         Rect2f(x + w - HEADER_H + 4, y + h - HEADER_H + 4, HEADER_H - 8, HEADER_H - 8)
     end
-    close_btn = Button(overlay; label="×", fontsize=18,
+    close_btn = Button(body_widgets; label="×", fontsize=18,
         tellwidth=false, tellheight=false)
     close_btn.layoutobservables.suggestedbbox[] = close_bbox[]
     on(close_bbox) do r; close_btn.layoutobservables.suggestedbbox[] = r; end
 
-    is_open = lift(identity, overlay.visible)
-
-    # Blocks added via Block(gridposition; ...) get their blockscene parented
-    # to the FIGURE's top scene, not to `overlay` — so hiding overlay only
-    # hides the backdrop and body poly, while Labels/Checkboxes/Buttons keep
-    # rendering at their popup positions (visible as floating text when
-    # closed). `track!` lets the caller register every popup-owned Block so
-    # we can drive their blockscene.visible from `overlay.visible`.
-    tracked = Any[]
-    function track!(block)
-        push!(tracked, block)
-        try; block.blockscene.visible[] = overlay.visible[]; catch; end
-        return block
-    end
-    on(overlay.visible) do v
-        for b in tracked
-            try; b.blockscene.visible[] = v; catch; end
-        end
-    end
-    # Auto-track the header widgets so callers only need to register their
-    # own additions.
-    track!(title_label)
-    track!(close_btn)
-
-    # MODAL EVENT INTERCEPTION
-    #
-    # Makie's Table installs a click+hover handler at priority=63 that
-    # consumes clicks landing in its bbox AND updates the hover highlight
-    # on every mouseposition change. Our popup Buttons/Checkboxes register
-    # at the default priority=1, so they NEVER FIRE when the popup overlaps
-    # the table area — Table grabs the click first. Hover state also leaks
-    # through because mouseposition events fire continuously.
-    #
-    # Fix: install priority=100 handlers on both mousebutton AND mouseposition
-    # that fire first when the popup is visible.
-    #
-    # - mouseposition: always Consume(true) when popup visible, so Table
-    #   (priority=63) never sees a hover position update. (Minor cost: popup
-    #   Menus lose their inside-dropdown hover-color tracking, but the
-    #   selection-on-click still works because that fires on mousebutton.)
-    # - mousebutton: hit-test against tracked widgets. Manually trigger
-    #   Button/Checkbox clicks (their own priority=1 handlers won't get a
-    #   chance), defer to Menu's priority=64 native handler on Menu hits
-    #   or when any popup Menu has its dropdown open, and consume otherwise.
-    on(parent.events.mouseposition; priority=100) do _
-        return overlay.visible[] ? Consume(true) : Consume(false)
-    end
-    on(parent.events.mousebutton; priority=100) do butt
-        overlay.visible[] || return Consume(false)
-        butt.action == Mouse.press || return Consume(false)
-        butt.button == Mouse.left || return Consume(false)
-
-        mp = parent.events.mouseposition[]
-
-        # If any popup Menu has its dropdown open, let Menu's own priority=64
-        # handler process the click (option selection or click-elsewhere-
-        # closes-dropdown logic).
-        for block in tracked
-            if block isa Makie.Menu && block.is_open[]
-                return Consume(false)
-            end
-        end
-
-        # Hit-test against tracked widgets.
-        for block in tracked
-            bbox = try
-                block.layoutobservables.computedbbox[]
-            catch
-                continue
-            end
-            mp in bbox || continue
-            if block isa Makie.Button
-                block.clicks[] = block.clicks[] + 1
-                return Consume(true)
-            elseif block isa Makie.Checkbox
-                block.checked[] = !block.checked[]
-                return Consume(true)
-            elseif block isa Makie.Menu
-                # Let Menu's priority=64 handler fire and open dropdown.
-                return Consume(false)
-            else
-                # Labels and other passive blocks — block the click from
-                # falling through to anything behind.
-                return Consume(true)
-            end
-        end
-
-        # Click landed on empty popup body, backdrop, or fully outside —
-        # consume to maintain modal behavior.
-        return Consume(true)
-    end
-
-    open!  = () -> (overlay.visible[] = true;  nothing)
-    close! = () -> (overlay.visible[] = false; nothing)
-    on(_ -> close!(), close_btn.clicks)
-
-    return (; scene=overlay, layout, title_label, close_btn,
-              open! = open!, close! = close!, is_open,
-              track! = track!)
+    pop = Popup(body, layout, title_label, close_btn)
+    on(_ -> close!(pop), close_btn.clicks)
+    return pop
 end
+
+"Show the popup."
+open!(p::Popup)        = (p.scene.parent.visible[] = true; nothing)
+"Hide the popup."
+close!(p::Popup)       = (p.scene.parent.visible[] = false; nothing)
+"Whether the popup is currently shown."
+Base.isopen(p::Popup)  = p.scene.parent.visible[]

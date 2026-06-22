@@ -6,6 +6,6 @@ include("recipes.jl")
 include("popup.jl")
 include("gui.jl")
 
-export run_gui
+export run_gui, open!, close!
 
 end

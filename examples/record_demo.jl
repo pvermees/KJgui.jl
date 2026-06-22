@@ -25,11 +25,11 @@ sleep(0.4)  # let the first draw settle so bboxes are valid
 # before we ask FakeInteraction to click them. We immediately close each one;
 # the demo will re-open them with synthetic clicks.
 notify(result.method_btn.clicks); sleep(0.2)
-result.method_popup_ref[].popup.close!()
+close!(result.method_popup_ref[].popup)
 notify(result.refs_btn.clicks); sleep(0.2)
-result.refs_popup_ref[].popup.close!()
+close!(result.refs_popup_ref[].popup)
 result.bot_panel.ensure_popup!()           # add-ratio-plot popup
-result.bot_panel.popup_ref[].popup.close!()
+close!(result.bot_panel.popup_ref[].popup)
 sleep(0.2)
 
 btns       = [c for c in result.fig.content if c isa Makie.Button]

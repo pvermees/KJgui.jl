@@ -119,16 +119,17 @@ end
     # Ratio stack starts empty — the user composes plots via the popup.
     @test isempty(result.bot_panel.ratio_defs[])
 
-    # `add_def!` (the popup's Apply target) creates one slot bundling all
-    # numerators against the shared denominator.
+    # `add_def!` (the popup's Apply target) pushes one def per numerator.
     result.bot_panel.add_def!([m.P.channel, m.d.channel], m.D.channel)
-    @test length(result.bot_panel.ratio_defs[]) == 1
-    slot = only(result.bot_panel.ratio_defs[])
-    @test sort(slot.numerators[]) == sort([m.P.channel, m.d.channel])
-    @test slot.denominator[] == m.D.channel
+    @test length(result.bot_panel.ratio_defs[]) == 2
+    nums_per_def = [only(d.numerators[]) for d in result.bot_panel.ratio_defs[]]
+    @test sort(nums_per_def) == sort([m.P.channel, m.d.channel])
+    @test all(d.denominator[] == m.D.channel for d in result.bot_panel.ratio_defs[])
 
-    # × close = remove_def! drops the slot.
-    result.bot_panel.remove_def!(slot)
+    # × close = remove_def! drops one def at a time.
+    while !isempty(result.bot_panel.ratio_defs[])
+        result.bot_panel.remove_def!(first(result.bot_panel.ratio_defs[]))
+    end
     @test isempty(result.bot_panel.ratio_defs[])
 
     # Switching method through every supported decay system must not throw
@@ -207,37 +208,42 @@ end
     bot = result.bot_panel
     d1 = bot.d_channel[]
 
-    # One slot with two numerators in Combined mode → 1 Axis with both
-    # ratios overlaid, a combined legend, and the slot's single × button.
-    bot.add_def!([bot.p_channel[], bot.sister_channel[]], d1)
-    @test length(bot.ratio_defs[]) == 1
-    slot = only(bot.ratio_defs[])
-    @test length(slot.axes) == 1
-    @test length(slot.plots) == 2
-    @test !isnothing(slot.close_btn)
-    @test !isempty(slot.legends)
+    # Two defs in Combined (default) → both share one Axis, no per-def
+    # close button or legend (the combined legend is built once).
+    bot.add_def!([bot.p_channel[]], d1)
+    bot.add_def!([bot.sister_channel[]], d1)
+    @test length(bot.ratio_defs[]) == 2
+    @test length(Set(d.ax for d in bot.ratio_defs[])) == 1     # one shared ax
+    @test all(isnothing(d.close_btn) for d in bot.ratio_defs[])
+    @test all(isnothing(d.legend)    for d in bot.ratio_defs[])
 
-    # Flip to Split → same slot, now N stacked axes, one per numerator,
-    # X-linked. Still one × per slot.
+    # Flip to Split → defs preserved, each gets its own Axis side-by-side,
+    # its own × close button, and its own per-axis legend.
     bot.mode_menu.i_selected[] =
         findfirst(==("Split"), bot.mode_menu.options[])
-    @test length(bot.ratio_defs[]) == 1
-    slot = only(bot.ratio_defs[])
-    @test length(slot.axes) == 2
+    @test length(bot.ratio_defs[]) == 2
+    @test length(Set(d.ax for d in bot.ratio_defs[])) == 2     # distinct axes
+    @test all(!isnothing(d.close_btn) for d in bot.ratio_defs[])
+    @test all(!isnothing(d.legend)    for d in bot.ratio_defs[])
 
-    # Add a second slot in Split mode.
+    # Adding a third def in Split mode creates a third side-by-side panel.
+    # Use a non-denominator, non-already-used channel so the numerator is
+    # meaningful — a D/D ratio is always 1 and the recipe drops it.
     third_num = first(filter(c -> c != d1 &&
                                   c != bot.p_channel[] &&
                                   c != bot.sister_channel[],
                               bot.channels_obs[]))
     bot.add_def!([third_num], d1)
-    @test length(bot.ratio_defs[]) == 2
+    @test length(bot.ratio_defs[]) == 3
+    @test length(Set(d.ax for d in bot.ratio_defs[])) == 3
 
-    # Flip back to Combined → slots preserved, each collapses to 1 Axis.
+    # Flip back to Combined → every def lands back on the shared Axis.
     bot.mode_menu.i_selected[] =
         findfirst(==("Combined"), bot.mode_menu.options[])
-    @test length(bot.ratio_defs[]) == 2
-    @test all(length(s.axes) == 1 for s in bot.ratio_defs[])
+    @test length(bot.ratio_defs[]) == 3
+    @test length(Set(d.ax for d in bot.ratio_defs[])) == 1
+    @test all(isnothing(d.close_btn) for d in bot.ratio_defs[])
+    @test all(isnothing(d.legend)    for d in bot.ratio_defs[])
 end
 
 @testset "Format picker switches KJ.load format on Read" begin
