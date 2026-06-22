@@ -1,6 +1,10 @@
 # Backup files
 *~
 
+# Linux/FUSE hidden files (open-but-unlinked artefacts; vanish once all
+# file handles are closed).
+.fuse_hidden*
+
 # Output of test functions
 test/*.csv
 test/*.json
