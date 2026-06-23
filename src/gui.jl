@@ -117,6 +117,8 @@ function build_dashboard!(fig::Figure,
         ytransform, fit_obs)
     biplot_panel = build_biplot_panel!(right, sample_obs,
         bot_panel.p_channel, bot_panel.d_channel, bot_panel.sister_channel)
+    register_outlier_toggle!(biplot_panel, sample_obs, method, fit_obs)
+    register_window_drag!(top_panel, sample_obs)
 
     # Panel strip above the biplot: `[plot type ▼] [on/off]`.
     panel_strip = right[5, 1:2] = GridLayout()
@@ -1333,6 +1335,193 @@ function build_biplot_panel!(right::GridLayout, sample_obs::Observable,
               concordia_notice_ref=Ref{Any}(nothing),
               right_layout=right,
               p_channel, d_channel, sister_channel)
+end
+
+mutable struct WindowDragState
+    kind::Symbol     # :bwin or :swin
+    win_idx::Int     # index into samp.bwin/samp.swin
+    side::Symbol     # :left or :right
+    active::Bool
+end
+
+"Find the bwin/swin edge nearest to data x-coord `cx`, or `nothing`."
+function nearest_window_edge(samp, cx::Real, tol::Real)
+    times = samp.dat[!, 1]
+    best = nothing
+    best_d = tol
+    for (kind, wins) in ((:bwin, samp.bwin), (:swin, samp.swin))
+        for (i, w) in enumerate(wins)
+            a, b = w[1], w[2]
+            (a < 1 || b > length(times) || a > b) && continue
+            for (side, idx) in ((:left, a), (:right, b))
+                d = abs(times[idx] - cx)
+                if d <= best_d
+                    best = (kind, i, side)
+                    best_d = d
+                end
+            end
+        end
+    end
+    return best
+end
+
+"Nearest row in `samp.dat`'s time column to data x-coord `cx`."
+function nearest_row(samp, cx::Real)
+    times = samp.dat[!, 1]
+    return argmin(abs.(Float64.(times) .- Float64(cx)))
+end
+
+"""
+    register_window_drag!(panel, sample_obs)
+
+Drag the bwin/swin edges on the count-rate axis to resize them. The
+mutation goes through `KJ.setBwin!`/`setSwin!` so downstream consumers
+(every `vspan!` driven by `samp.bwin`/`samp.swin`) refresh on the
+follow-up `notify(sample_obs)`.
+
+Visual cues:
+- Permanent thin tick at every bwin/swin edge so the grab points are
+  always visible.
+- Hover within tolerance brightens the nearest edge to a thick coloured
+  line (blue for bwin, orange for swin), signalling "grabbable".
+- During a drag, the highlight follows the cursor live.
+"""
+function register_window_drag!(panel, sample_obs::Observable)
+    drag = WindowDragState(:bwin, 0, :left, false)
+    ax = panel.ax
+
+    # Permanent thin edge ticks at every window boundary.
+    edge_xs = lift(sample_obs) do samp
+        isnothing(samp) && return Float64[]
+        times = samp.dat[!, 1]
+        n = length(times)
+        out = Float64[]
+        for w in (samp.bwin..., samp.swin...)
+            (w[1] < 1 || w[2] > n) && continue
+            push!(out, Float64(times[w[1]]), Float64(times[w[2]]))
+        end
+        return out
+    end
+    vlines!(ax, edge_xs; color = (:black, 0.4), linewidth = 1)
+
+    # Hover/drag highlight — empty vector → not rendered.
+    hover_xs   = Observable(Float64[])
+    hover_kind = Observable(:bwin)   # :bwin → blue, :swin → orange
+    hover_color = lift(hover_kind) do k
+        k === :bwin ? RGBAf(0.2, 0.5, 1.0, 0.95) : RGBAf(1.0, 0.55, 0.1, 0.95)
+    end
+    vlines!(ax, hover_xs; color = hover_color, linewidth = 4)
+
+    function set_hover!(samp, edge)
+        if isnothing(edge)
+            isempty(hover_xs[]) || (hover_xs[] = Float64[])
+            return
+        end
+        kind, i, side = edge
+        wins = kind === :bwin ? samp.bwin : samp.swin
+        idx = side === :left ? wins[i][1] : wins[i][2]
+        hover_kind[] = kind
+        hover_xs[]   = [Float64(samp.dat[idx, 1])]
+    end
+
+    Makie.register_interaction!(ax, :window_drag) do ev::MouseEvent, _
+        samp = sample_obs[]
+        isnothing(samp) && return Consume(false)
+        tol = 0.01 * ax.finallimits[].widths[1]
+
+        if ev.type === MouseEventTypes.over && !drag.active
+            set_hover!(samp, nearest_window_edge(samp, ev.data[1], tol))
+            return Consume(false)
+        elseif ev.type === MouseEventTypes.leftdragstart
+            edge = nearest_window_edge(samp, ev.data[1], tol)
+            isnothing(edge) && return Consume(false)
+            drag.kind, drag.win_idx, drag.side = edge
+            drag.active = true
+            set_hover!(samp, edge)
+            return Consume(true)
+        elseif ev.type === MouseEventTypes.leftdrag
+            drag.active || return Consume(false)
+            row = nearest_row(samp, ev.data[1])
+            wins = drag.kind === :bwin ? samp.bwin : samp.swin
+            old_a, old_b = wins[drag.win_idx][1], wins[drag.win_idx][2]
+            new_a, new_b = drag.side === :left ?
+                (min(row, old_b - 1), old_b) :
+                (old_a, max(row, old_a + 1))
+            new_wins = collect(wins)
+            new_wins[drag.win_idx] = (new_a, new_b)
+            drag.kind === :bwin ? KJ.setBwin!(samp, new_wins) :
+                                   KJ.setSwin!(samp, new_wins)
+            notify(sample_obs)
+            # Track the new edge position with the cursor.
+            set_hover!(samp, (drag.kind, drag.win_idx, drag.side))
+            return Consume(true)
+        elseif ev.type === MouseEventTypes.leftdragstop
+            drag.active || return Consume(false)
+            drag.active = false
+            # Re-pick the hover edge under the cursor (or clear).
+            set_hover!(samp, nearest_window_edge(samp, ev.data[1], tol))
+            return Consume(true)
+        end
+        return Consume(false)
+    end
+    return
+end
+
+"""
+    register_outlier_toggle!(panel, sample_obs, method, fit_obs)
+
+Double-click a scatter point on the biplot to flip its `outlier` flag.
+The recipes (`SamplePlot`/`RatioPlot`/`BiPlot`) all consult
+`samp.dat.outlier`, so a `notify(sample_obs)` after the flip refreshes
+every panel.
+
+Scatter index → `samp.dat` row mapping:
+- processed mode (Gmethod + fit): the scatter is `KJ.atomic` output,
+  which iterates over `swinData(samp)` — index `k` corresponds to
+  `windows2selection(samp.swin)[k]`.
+- raw mode: scatter covers every row in `samp.dat`, so `k` is the row.
+"""
+function register_outlier_toggle!(panel, sample_obs::Observable,
+                                  method::Observable, fit_obs::Observable)
+    Makie.register_interaction!(panel.ax, :toggle_outlier) do ev::MouseEvent, _
+        ev.type === MouseEventTypes.leftdoubleclick || return Consume(false)
+        plot = panel.plot_ref[]
+        (isnothing(plot) || isnothing(sample_obs[])) && return Consume(false)
+        xs, ys = plot.xs[], plot.ys[]
+        isempty(xs) && return Consume(false)
+
+        # Normalise distances by axis extent so x/y scale don't bias the
+        # nearest-point pick.
+        lims = panel.ax.finallimits[]
+        wx, wy = lims.widths
+        cx, cy = ev.data[1], ev.data[2]
+        best_k, best_d2 = 0, Inf
+        for k in eachindex(xs)
+            x, y = xs[k], ys[k]
+            (isnan(x) || isnan(y)) && continue
+            d2 = ((x - cx)/wx)^2 + ((y - cy)/wy)^2
+            if d2 < best_d2
+                best_k, best_d2 = k, d2
+            end
+        end
+        best_k == 0 && return Consume(false)
+
+        samp = sample_obs[]
+        is_processed = !isnothing(fit_obs[]) && method[] isa KJ.Gmethod
+        row = if is_processed
+            sel, _, _ = KJ.windows2selection(samp.swin)
+            best_k <= length(sel) ? sel[best_k] : 0
+        else
+            best_k
+        end
+        (row == 0 || row > nrow(samp.dat)) && return Consume(false)
+        hasproperty(samp.dat, :outlier) ||
+            (samp.dat.outlier = falses(nrow(samp.dat)))
+        samp.dat.outlier[row] = !samp.dat.outlier[row]
+        notify(sample_obs)
+        return Consume(true)
+    end
+    return
 end
 
 "Build the isochron `biplot` (P/D vs S/D) on first sample load."

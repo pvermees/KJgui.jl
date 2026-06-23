@@ -322,6 +322,76 @@ end
     @test length(sc[1][]) == n_rows
 end
 
+@testset "Top axis drag resizes bwin/swin edges and syncs panels" begin
+    GLMakie.activate!(visible=false)
+    result = KJgui.run_gui(path=LUHF)
+    top = result.top_panel
+    result.table.i_selected[] = 1; sleep(0.1)
+    samp = result.sample_obs[]
+
+    fn = Makie.interactions(top.ax)[:window_drag][2]
+    me(t, x) = Makie.MouseEvent(t, 0.0, Point2d(x, 0), Point2f(0,0),
+                                 0.0, Point2d(0,0), Point2f(0,0))
+    times = samp.dat[!, 1]
+
+    # Drag swin's right edge inwards.
+    s_right_t = times[samp.swin[1][2]]
+    @test fn(me(Makie.MouseEventTypes.leftdragstart, s_right_t), top.ax) ==
+          Makie.Consume(true)
+    fn(me(Makie.MouseEventTypes.leftdrag, s_right_t - 10.0), top.ax)
+    fn(me(Makie.MouseEventTypes.leftdragstop, s_right_t - 10.0), top.ax)
+    @test samp.swin[1][2] < 136
+    @test samp.swin[1][1] == 68
+
+    # Drag bwin's left edge to the right.
+    b_left_t = times[samp.bwin[1][1]]
+    fn(me(Makie.MouseEventTypes.leftdragstart, b_left_t), top.ax)
+    fn(me(Makie.MouseEventTypes.leftdrag, b_left_t + 5.0), top.ax)
+    fn(me(Makie.MouseEventTypes.leftdragstop, b_left_t + 5.0), top.ax)
+    @test samp.bwin[1][1] > 2
+    @test samp.bwin[1][2] == 60
+
+    # Pointer not close to any edge → ignored (defers to other interactions).
+    midpoint = (b_left_t + times[samp.bwin[1][2]]) / 2 + 0.5
+    @test fn(me(Makie.MouseEventTypes.leftdragstart, midpoint), top.ax) ==
+          Makie.Consume(false)
+end
+
+@testset "Biplot double-click toggles outliers on the underlying sample" begin
+    GLMakie.activate!(visible=false)
+    result = KJgui.run_gui(path=LUHF)
+    biplot = result.biplot_panel
+    ax = biplot.ax
+
+    # First sample's biplot is built lazily — kick it by selecting row 1.
+    result.table.i_selected[] = 1; sleep(0.2)
+    samp = result.sample_obs[]
+    @test all(.!samp.dat.outlier)
+    @test hasproperty(samp.dat, :outlier)
+
+    fn = Makie.interactions(ax)[:toggle_outlier][2]
+    xs = biplot.plot_ref[].xs[]
+    ys = biplot.plot_ref[].ys[]
+    k = findfirst(i -> !isnan(xs[i]) && !isnan(ys[i]) && (xs[i] != 0 || ys[i] != 0),
+                  eachindex(xs))
+    me(t) = Makie.MouseEvent(t, 0.0, Point2d(xs[k], ys[k]), Point2f(0,0),
+                              0.0, Point2d(0,0), Point2f(0,0))
+
+    # Raw mode (no fit) — scatter index = `samp.dat` row directly.
+    fn(me(Makie.MouseEventTypes.leftdoubleclick), ax)
+    @test samp.dat.outlier[k] == true
+    @test sum(samp.dat.outlier) == 1
+
+    # Double-click again → flip off.
+    fn(me(Makie.MouseEventTypes.leftdoubleclick), ax)
+    @test samp.dat.outlier[k] == false
+    @test sum(samp.dat.outlier) == 0
+
+    # Non-doubleclick events ignored.
+    fn(me(Makie.MouseEventTypes.leftclick), ax)
+    @test sum(samp.dat.outlier) == 0
+end
+
 @testset "Table-based grouping drives method.groups" begin
     GLMakie.activate!(visible=false)
     result = KJgui.run_gui(path=LUHF)

@@ -395,7 +395,7 @@ Two modes, depending on whether a fit is available:
     "Channel name for the shared denominator (e.g. daughter D)"
     denominator = ""
     "Marker size"
-    markersize = 6
+    markersize = 10
     "Colormap used for the time gradient"
     point_colormap = :viridis
     "Geochronology method; when set together with `fit`, switches to processed mode"
@@ -413,9 +413,13 @@ Makie.convert_arguments(::Type{<:BiPlot}, s::KJ.Sample) = (s,)
 Makie.convert_arguments(::Type{<:BiPlot}, ::Nothing) = (nothing,)
 
 function Makie.plot!(p::BiPlot)
+    # `outlier_mask` aligns with the scatter rows (signal-window slice in
+    # processed mode, full `samp.dat` in raw mode). The plot below splits
+    # it into two scatter layers so outliers stay visible-but-marked.
     Makie.map!(p.attributes,
                [:sample, :x_numerator, :y_numerator, :denominator, :method, :fit],
-               [:xs, :ys, :ts]) do samp, xnum, ynum, den, m, fit
+               [:xs, :ys, :ts, :outlier_mask]) do samp, xnum, ynum, den, m, fit
+        empty_out = (Float64[], Float64[], Float64[], Bool[])
         # Processed mode — only when both method and fit are real Gmethod/Gfit.
         if !isnothing(samp) && !isnothing(fit) && m isa KJ.Gmethod
             try
@@ -424,25 +428,45 @@ function Makie.plot!(p::BiPlot)
                 y = res.d ./ res.D
                 @. x = ifelse(isfinite(x), x, NaN)
                 @. y = ifelse(isfinite(y), y, NaN)
-                return (collect(x), collect(y), Float64.(1:length(x)))
+                # `KJ.atomic` iterates `swinData(samp)` — outlier mask
+                # follows the same row slice.
+                sel, _, _ = KJ.windows2selection(samp.swin)
+                mask = hasproperty(samp.dat, :outlier) ?
+                    Vector{Bool}(samp.dat.outlier[sel]) :
+                    falses(length(x))
+                return (collect(x), collect(y),
+                        Float64.(1:length(x)), mask)
             catch err
                 @debug "KJ.atomic threw; biplot falls back to raw mode" exception=err
             end
         end
         # Raw mode
         if isnothing(samp) || isempty(xnum) || isempty(ynum) || isempty(den)
-            return (Float64[], Float64[], Float64[])
+            return empty_out
         end
         cols = names(samp.dat)
-        (xnum in cols && ynum in cols && den in cols) ||
-            return (Float64[], Float64[], Float64[])
+        (xnum in cols && ynum in cols && den in cols) || return empty_out
         d = Vector{Float64}(samp.dat[!, den])
         x = Vector{Float64}(samp.dat[!, xnum]) ./ d
         y = Vector{Float64}(samp.dat[!, ynum]) ./ d
         @. x = ifelse(isfinite(x), x, NaN)
         @. y = ifelse(isfinite(y), y, NaN)
         t = Vector{Float64}(samp.dat[!, 1])
-        return (x, y, t)
+        mask = hasproperty(samp.dat, :outlier) ?
+            Vector{Bool}(samp.dat.outlier) : falses(length(x))
+        return (x, y, t, mask)
+    end
+
+    # Split scatter into in-fit and outlier layers. Good rows keep the
+    # time-gradient colour; outliers render as red ✗ markers on top.
+    Makie.map!(p.attributes, [:xs, :ys, :ts, :outlier_mask],
+               [:xs_good, :ys_good, :ts_good,
+                :xs_outlier, :ys_outlier]) do x, y, t, mask
+        if isempty(mask) || length(mask) != length(x)
+            return (x, y, t, Float64[], Float64[])
+        end
+        good = .!mask
+        return (x[good], y[good], t[good], x[mask], y[mask])
     end
 
     # Isochron line + 2σ ribbon + age annotation. Empty observables when
@@ -483,10 +507,13 @@ function Makie.plot!(p::BiPlot)
         end
     end
 
-    scatter!(p, p.xs, p.ys;
-             color = p.ts,
+    scatter!(p, p.xs_good, p.ys_good;
+             color = p.ts_good,
              colormap = p.point_colormap,
              markersize = p.markersize)
+    scatter!(p, p.xs_outlier, p.ys_outlier;
+             color = :red, marker = :xcross,
+             markersize = p.markersize[] * 1.8)
     band!(p, p.ribbon_xs, p.ribbon_lo, p.ribbon_hi;
           color = (p.isochron_color[], 0.15))
     lines!(p, p.line_xs, p.line_ys;
@@ -495,3 +522,20 @@ function Makie.plot!(p::BiPlot)
           fontsize = 12, align = (:left, :bottom), offset = (8, 8))
     return p
 end
+
+"""
+Restrict autolimits to the scatter children. The isochron `band!` + `lines!`
+extend to `(0, 0)` and would otherwise yank the axis range out to include
+the origin, leaving the actual data points clustered in a tiny corner.
+"""
+function Makie.data_limits(p::BiPlot)
+    bb = nothing
+    for child in p.plots
+        child isa Makie.Scatter || continue
+        cbb = Makie.data_limits(child)
+        bb = isnothing(bb) ? cbb : union(bb, cbb)
+    end
+    return something(bb, Makie.Rect3d(Point3d(NaN, NaN, 0), Vec3d(0, 0, 0)))
+end
+Makie.boundingbox(p::BiPlot, space::Symbol = :data) =
+    Makie.apply_transform_and_model(p, Makie.data_limits(p))
