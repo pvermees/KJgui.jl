@@ -1,3 +1,9 @@
+"Maximum number of channels a `SamplePlot` will display."
+const SAMPLE_MAX = 32
+
+"Maximum number of numerator lines a `RatioPlot` will display."
+const RATIO_MAX = 8
+
 """
     sampleplot(samp::KJ.Sample; channels=Makie.automatic, ...)
     sampleplot!(ax_or_fig, samp; kwargs...)
@@ -71,21 +77,38 @@ function Makie.plot!(p::SamplePlot)
     vlines!(p, p.t0_value;
             color=p.t0_color, linestyle=p.t0_linestyle, linewidth=p.t0_linewidth)
 
-    # One `lines!` per channel (not `series`) so the Key can toggle each
-    # channel's visibility and highlight independently. Channel count is
-    # fixed per loaded run; this loop runs once.
-    n = length(p.channel_names[])
-    cols = line_colors(p.line_colormap[], n)
-    for i in 1:n
-        ydata = lift(p.times, p.ymat) do t, m
-            (i <= size(m, 1) && length(t) == size(m, 2)) ?
+    # Thin red vlines at the time of every flagged outlier row, so the
+    # user can see which time-steps `KJ.process!` rejected (or which they
+    # manually flagged via the biplot double-click).
+    outlier_xs = lift(p.sample, p.times) do samp, t
+        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Float64[]
+        outliers = samp.dat.outlier
+        length(outliers) == length(t) || return Float64[]
+        out = Float64[]
+        for i in eachindex(outliers)
+            outliers[i] && push!(out, Float64(t[i]))
+        end
+        return out
+    end
+    vlines!(p, outlier_xs; color = (:red, 0.45), linewidth = 1.0,
+            inspectable = false)
+
+    # Pre-allocate `SAMPLE_MAX` line children — the loop runs once at
+    # recipe-build time but the data observables update reactively as the
+    # selected sample (and channel set) changes. Unused slots get empty
+    # data + empty label, so they don't render or pollute the Legend.
+    # Hidden channels (via `channel_visible`) also collapse to empty
+    # data so they don't inflate the axis autolimits.
+    cols = line_colors(p.line_colormap[], SAMPLE_MAX)
+    for i in 1:SAMPLE_MAX
+        ydata = lift(p.times, p.ymat, p.channel_visible) do t, m, vis
+            shown = isempty(vis) || i > length(vis) || vis[i]
+            (shown && i <= size(m, 1) && length(t) == size(m, 2)) ?
                 Point2f.(t, view(m, i, :)) : Point2f[]
         end
         lines!(p, ydata;
                color     = cols[i],
                label     = lift(cn -> i <= length(cn) ? cn[i] : "", p.channel_names),
-               visible   = lift(v -> isempty(v) || i > length(v) ? true : v[i],
-                                p.channel_visible),
                linewidth = lift(p.channel_highlight, p.line_linewidth) do h, lw
                    (i <= length(h) && h[i]) ? 2.5lw : lw
                end)
@@ -101,10 +124,16 @@ function line_colors(colormap, n)
     return [palette[mod1(i, k)] for i in 1:n]
 end
 
-# Recurse into the recipe's children so Legend can see their labels.
-# Makie's default `get_plots(::AbstractPlot) = [p]` stops at the recipe.
-Makie.get_plots(p::SamplePlot) =
-    reduce(vcat, Makie.get_plots.(p.plots); init=Makie.AbstractPlot[])
+# Surface only the labeled line children so `Legend` doesn't include the
+# pre-allocated empty slots (channels not in the current sample).
+function Makie.get_plots(p::SamplePlot)
+    children = reduce(vcat, Makie.get_plots.(p.plots); init=Makie.AbstractPlot[])
+    return filter(children) do c
+        c isa Lines || return true
+        l = c.label[]
+        l isa AbstractString && !isempty(l)
+    end
+end
 
 """
     ratioplot(samp::KJ.Sample; numerators=[…], denominator="…", …)
@@ -304,6 +333,21 @@ function Makie.plot!(p::RatioPlot)
     vlines!(p, p.t0_value;
             color=p.t0_color, linestyle=p.t0_linestyle, linewidth=p.t0_linewidth)
 
+    # Mark every flagged outlier row with a thin red vline; the ratio
+    # line itself is already NaN'd at those rows (see `compute_ratios`).
+    outlier_xs = lift(p.sample, p.times) do samp, t
+        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Float64[]
+        outliers = samp.dat.outlier
+        length(outliers) == length(t) || return Float64[]
+        out = Float64[]
+        for i in eachindex(outliers)
+            outliers[i] && push!(out, Float64(t[i]))
+        end
+        return out
+    end
+    vlines!(p, outlier_xs; color = (:red, 0.45), linewidth = 1.0,
+            inspectable = false)
+
     # Pre-allocate `RATIO_MAX` line children so `numerators` can grow at
     # runtime without rebuilding. Unused slots get empty data + empty
     # label, so they don't render and don't pollute the Legend.
@@ -345,9 +389,6 @@ function Makie.plot!(p::RatioPlot)
     end
     return p
 end
-
-"Maximum number of overlaid ratios per `RatioPlot` panel."
-const RATIO_MAX = 8
 
 """
 Surface only labeled line children to `Legend` — pre-allocated empty

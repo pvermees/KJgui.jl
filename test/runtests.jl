@@ -14,33 +14,39 @@ const LUHF = joinpath(@__DIR__, "Lu-Hf")
     @test count(==(Axis), blocks) == 2          # count-rate + biplot (ratio stack empty)
     @test count(==(Legend), blocks) == 0        # axislegend is per-ratio-plot, none yet
     @test count(==(Table), blocks) == 1
-    @test count(==(Button), blocks) >= length(KJgui.STUB_BUTTONS) + 1  # + Read (method is a Menu)
+    # +1 for Read, +1 for Method (now a Button too), +1 for References, +1 for Channels.
+    @test count(==(Button), blocks) >= length(KJgui.STUB_BUTTONS) + 1
 
     # In geochronology mode the config row is collapsed — P/D/S come from
-    # the Key's radio columns. Internal-standard picker stays hidden too.
+    # the method's suggested channels. Internal-standard picker stays hidden.
     @test result.bot_panel.internal_menu.blockscene.visible[] == false
 
-    # The Key has ON + HL per channel (no role columns — method's P/D/S come
-    # from `suggest_channel_indices`, not a user override).
-    key = result.top_panel.key_ref[]
+    # Default channel visibility = only P/D/d on; the Channels popup lets
+    # the user toggle individual channels.
     sp = result.top_panel.plot_ref[]
-    nchan = length(sp.channel_names[])
-    @test length(key.on_boxes) == nchan
-    @test length(key.hl_boxes) == nchan
-    key.on_boxes[1].checked[] = false           # switch channel 1 off
-    @test sp.channel_visible[][1] == false
-    key.hl_boxes[2].checked[] = true            # highlight channel 2
-    @test sp.channel_highlight[][2] == true
+    chans = result.bot_panel.channels_obs[]
+    roles = (result.bot_panel.p_channel[], result.bot_panel.d_channel[],
+             result.bot_panel.sister_channel[])
+    @test sp.channel_visible[] == Bool[c in roles for c in chans]
+    @test sp.channel_highlight[] == falses(length(chans))
 
-    # Biplot is on by default and toggles via the Panels checkbox / observable.
+    # Biplot is hidden by default — only meaningful after `KJ.process!`
+    # produces a fit. The strip header shows the on/off checkbox so the
+    # user knows the panel exists.
     bp_panel = result.biplot_panel
     @test bp_panel.ax.title[] == "Isochron"
-    @test bp_panel.ax.blockscene.visible[] == true
     @test !isnothing(bp_panel.plot_ref[])
+    @test bp_panel.ax.blockscene.visible[] == false
+    # Simulating a fit reveals the biplot; the user-visible checkbox
+    # still gates it independently.
+    result.fit[] = KJ.Gfit(result.method[])   # real stand-in Gfit
+    @test bp_panel.ax.blockscene.visible[] == true
     result.biplot_visible[] = false
     @test bp_panel.ax.blockscene.visible[] == false
     result.biplot_visible[] = true
     @test bp_panel.ax.blockscene.visible[] == true
+    result.fit[] = nothing
+    @test bp_panel.ax.blockscene.visible[] == false
 
     table = result.table
     @test table.i_selected[] == 1
@@ -117,19 +123,19 @@ end
     @test result.bot_panel.sister_channel[] == m.d.channel
 
     # Ratio stack starts empty — the user composes plots via the popup.
-    @test isempty(result.bot_panel.ratio_defs[])
+    @test isempty(result.bot_panel.ratio_defs)
 
     # `add_def!` (the popup's Apply target) creates one slot bundling all
     # numerators against the shared denominator.
-    result.bot_panel.add_def!([m.P.channel, m.d.channel], m.D.channel)
-    @test length(result.bot_panel.ratio_defs[]) == 1
-    slot = only(result.bot_panel.ratio_defs[])
+    KJgui.add_def!(result.bot_panel, [m.P.channel, m.d.channel], m.D.channel)
+    @test length(result.bot_panel.ratio_defs) == 1
+    slot = only(result.bot_panel.ratio_defs)
     @test sort(slot.numerators[]) == sort([m.P.channel, m.d.channel])
     @test slot.denominator[] == m.D.channel
 
     # × close = remove_def! drops the slot.
-    result.bot_panel.remove_def!(slot)
-    @test isempty(result.bot_panel.ratio_defs[])
+    KJgui.remove_def!(result.bot_panel, slot)
+    @test isempty(result.bot_panel.ratio_defs)
 
     # Switching method through every supported decay system must not throw
     # (it would crash if the suggestion fell back to a single channel
@@ -151,8 +157,9 @@ end
     result = KJgui.run_gui(path=LUHF)
     bp = result.bot_panel
 
-    # Default geochronology mode keeps the biplot visible.
+    # Default geochronology mode: biplot stays hidden until a fit exists.
     @test result.method[] isa KJ.Gmethod
+    result.fit[] = KJ.Gfit(result.method[])
     @test result.biplot_panel.ax.blockscene.visible[] == true
 
     # Switching to Concentration builds a Cmethod, hides the biplot, and
@@ -209,9 +216,9 @@ end
 
     # One slot with two numerators in Combined mode → 1 Axis with both
     # ratios overlaid, a combined legend, and the slot's single × button.
-    bot.add_def!([bot.p_channel[], bot.sister_channel[]], d1)
-    @test length(bot.ratio_defs[]) == 1
-    slot = only(bot.ratio_defs[])
+    KJgui.add_def!(bot, [bot.p_channel[], bot.sister_channel[]], d1)
+    @test length(bot.ratio_defs) == 1
+    slot = only(bot.ratio_defs)
     @test length(slot.axes) == 1
     @test length(slot.plots) == 2
     @test !isnothing(slot.close_btn)
@@ -221,8 +228,8 @@ end
     # X-linked. Still one × per slot.
     bot.mode_menu.i_selected[] =
         findfirst(==("Split"), bot.mode_menu.options[])
-    @test length(bot.ratio_defs[]) == 1
-    slot = only(bot.ratio_defs[])
+    @test length(bot.ratio_defs) == 1
+    slot = only(bot.ratio_defs)
     @test length(slot.axes) == 2
 
     # Add a second slot in Split mode.
@@ -230,14 +237,14 @@ end
                                   c != bot.p_channel[] &&
                                   c != bot.sister_channel[],
                               bot.channels_obs[]))
-    bot.add_def!([third_num], d1)
-    @test length(bot.ratio_defs[]) == 2
+    KJgui.add_def!(bot, [third_num], d1)
+    @test length(bot.ratio_defs) == 2
 
     # Flip back to Combined → slots preserved, each collapses to 1 Axis.
     bot.mode_menu.i_selected[] =
         findfirst(==("Combined"), bot.mode_menu.options[])
-    @test length(bot.ratio_defs[]) == 2
-    @test all(length(s.axes) == 1 for s in bot.ratio_defs[])
+    @test length(bot.ratio_defs) == 2
+    @test all(length(s.axes) == 1 for s in bot.ratio_defs)
 end
 
 @testset "Format picker switches KJ.load format on Read" begin
@@ -282,14 +289,14 @@ end
     @test m.d.proxy == "Hf178"   # inferred from "Hf178 -> 260" (proxy for 177Hf)
 
     # Explicit non-inferred override on d → Pairing.proxy changes.
-    bot.commit_method!("Lu-Hf",
+    KJgui.commit_method!(bot, "Lu-Hf",
         bot.p_channel[], bot.d_channel[], bot.sister_channel[];
         s_pr="Hf179")
     @test result.method[].d.proxy == "Hf179"
     @test bot.sister_proxy[]      == "Hf179"
 
     # Clearing the override (empty string) reverts to inference.
-    bot.commit_method!("Lu-Hf",
+    KJgui.commit_method!(bot, "Lu-Hf",
         bot.p_channel[], bot.d_channel[], bot.sister_channel[];
         s_pr="")
     @test result.method[].d.proxy == "Hf178"
@@ -357,6 +364,75 @@ end
           Makie.Consume(false)
 end
 
+@testset "Ctrl-drag start on top axis appends a new bwin/swin sub-window" begin
+    GLMakie.activate!(visible=false)
+    result = KJgui.run_gui(path=LUHF)
+    result.table.i_selected[] = 1; sleep(0.1)
+    samp = result.sample_obs[]
+
+    bwin_n0, swin_n0 = length(samp.bwin), length(samp.swin)
+    times = samp.dat[!, 1]
+    t0 = Float64(samp.t0)
+
+    # Below t0 → new bwin segment.
+    x_before = t0 - (t0 - times[1]) / 3
+    target_b = KJgui.append_window!(samp, :bwin, x_before)
+    @test length(samp.bwin) == bwin_n0 + 1
+    @test target_b isa KJgui.BwinDrag
+    @test target_b.side === :right
+    a, b = samp.bwin[end]
+    @test b == a + 1
+    @test 1 <= a <= length(times) - 1
+
+    # After t0 → new swin segment.
+    x_after = t0 + (times[end] - t0) / 3
+    target_s = KJgui.append_window!(samp, :swin, x_after)
+    @test length(samp.swin) == swin_n0 + 1
+    @test target_s isa KJgui.SwinDrag
+    @test target_s.side === :right
+
+    # New segment can be grown by the shared edge drag.
+    grow_to = min(a + 4, length(times))
+    KJgui.drag_to!(samp, target_b, Float64(times[grow_to]))
+    @test samp.bwin[end][2] == grow_to
+end
+
+@testset "Double-click on count-rate axis toggles nearest-row outlier" begin
+    GLMakie.activate!(visible=false)
+    result = KJgui.run_gui(path=LUHF)
+    top = result.top_panel
+    result.table.i_selected[] = 1; sleep(0.1)
+    samp = result.sample_obs[]
+    times = samp.dat[!, 1]
+
+    fn = Makie.interactions(top.ax)[:toggle_outlier_time][2]
+    row = 42
+    me(t) = Makie.MouseEvent(t, 0.0, Point2d(Float64(times[row]), 0),
+                              Point2f(0,0), 0.0, Point2d(0,0), Point2f(0,0))
+
+    @test all(.!samp.dat.outlier)
+    fn(me(Makie.MouseEventTypes.leftdoubleclick), top.ax)
+    @test samp.dat.outlier[row] == true
+
+    # Toggle off.
+    fn(me(Makie.MouseEventTypes.leftdoubleclick), top.ax)
+    @test samp.dat.outlier[row] == false
+
+    # Non-doubleclick ignored.
+    fn(me(Makie.MouseEventTypes.leftclick), top.ax)
+    @test sum(samp.dat.outlier) == 0
+
+    # Ratio-slot axes also carry the interaction — need at least one def.
+    chans = result.bot_panel.channels_obs[]
+    if !isempty(chans)
+        KJgui.add_def!(result.bot_panel, [chans[1]], chans[end]); sleep(0.05)
+        ratio_ax = first(result.bot_panel.ratio_defs[1].axes)
+        fn_r = Makie.interactions(ratio_ax)[:toggle_outlier_time][2]
+        fn_r(me(Makie.MouseEventTypes.leftdoubleclick), ratio_ax)
+        @test samp.dat.outlier[row] == true
+    end
+end
+
 @testset "Biplot double-click toggles outliers on the underlying sample" begin
     GLMakie.activate!(visible=false)
     result = KJgui.run_gui(path=LUHF)
@@ -413,11 +489,11 @@ end
     bp1_idx = findfirst(s -> s.sname == "BP - 01", run)
     bp2_idx = findfirst(s -> s.sname == "BP - 02", run)
     @test bp1_idx !== nothing && bp2_idx !== nothing
-    result.group_picker.open_with_defaults!(run[bp1_idx].sname,
+    KJgui.open_with_defaults!(result.group_picker, run[bp1_idx].sname,
                                             run[bp1_idx].group, bp1_idx)
     # Drive the pick programmatically by clicking the BP button in the
     # picker's button list (button 2 after the "(sample)" reset).
-    bp_btn = first(b for b in result.group_picker.rm_buttons[]
+    bp_btn = first(b for b in result.group_picker.rm_buttons
                      if b.label[] == "BP")
     notify(bp_btn.clicks)
     @test count(s -> s.group == "BP", run) == 1
@@ -425,7 +501,7 @@ end
 
     # Second pick to the SAME RM triggers LCS auto-expansion: every BP - NN
     # sample now joins the group.
-    result.group_picker.open_with_defaults!(run[bp2_idx].sname,
+    KJgui.open_with_defaults!(result.group_picker, run[bp2_idx].sname,
                                             run[bp2_idx].group, bp2_idx)
     notify(bp_btn.clicks)
     n_bp_samples = count(s -> startswith(s.sname, "BP - "), run)
@@ -433,43 +509,27 @@ end
     @test result.group_rm_assignments[] == Dict("BP" => "BP")
     @test result.method[].groups == Dict("BP" => "BP")
 
-    # Reset by picking "(sample)" — only the clicked cell resets.
-    result.group_picker.open_with_defaults!(run[bp1_idx].sname,
+    # Reset by picking "(sample)" — BULK-clears every sample sharing the
+    # clicked row's current group. Mirrors the LCS bulk-assign so the
+    # user can undo a whole group with one click.
+    KJgui.open_with_defaults!(result.group_picker, run[bp1_idx].sname,
                                             run[bp1_idx].group, bp1_idx)
-    sample_reset_btn = first(b for b in result.group_picker.rm_buttons[]
+    sample_reset_btn = first(b for b in result.group_picker.rm_buttons
                                  if b.label[] == "(sample)")
     notify(sample_reset_btn.clicks)
+    @test count(s -> s.group == "BP", run) == 0
     @test run[bp1_idx].group == "sample"
-    @test run[bp2_idx].group == "BP"  # untouched
+    @test run[bp2_idx].group == "sample"
 
-    # Reset BP - 03 → only it flips. Adding BP - 01 back must NOT re-run
-    # the prefix expansion (would re-grab BP - 03).
-    bp3_idx = findfirst(s -> s.sname == "BP - 03", run)
-    result.group_picker.open_with_defaults!(run[bp3_idx].sname,
-                                            run[bp3_idx].group, bp3_idx)
-    notify(sample_reset_btn.clicks)
-    @test run[bp3_idx].group == "sample"
-
-    bp_count_before = count(s -> s.group == "BP", run)
-    # Re-click BP - 01 → BP. Should add ONLY BP - 01 back, not re-include BP - 03.
-    result.group_picker.open_with_defaults!(run[bp1_idx].sname,
-                                            run[bp1_idx].group, bp1_idx)
-    notify(bp_btn.clicks)
-    @test run[bp1_idx].group == "BP"
-    @test run[bp3_idx].group == "sample"   # NOT re-included by stale LCS
-    @test count(s -> s.group == "BP", run) == bp_count_before + 1
-
-    # Clear all BP samples → the lcs_done flag for "BP" gets forgotten,
-    # so a future second pick is allowed to re-expand.
-    for s in run; s.group == "BP" && (s.group = "sample"); end
-    notify(result.state)
+    # The lcs_done flag for "BP" was forgotten with the bulk clear, so a
+    # future second pick is allowed to re-expand.
     # First pick — single sample.
-    result.group_picker.open_with_defaults!(run[bp1_idx].sname,
+    KJgui.open_with_defaults!(result.group_picker, run[bp1_idx].sname,
                                             run[bp1_idx].group, bp1_idx)
     notify(bp_btn.clicks)
     @test count(s -> s.group == "BP", run) == 1
     # Second pick — full expansion fires again on a fresh group.
-    result.group_picker.open_with_defaults!(run[bp2_idx].sname,
+    KJgui.open_with_defaults!(result.group_picker, run[bp2_idx].sname,
                                             run[bp2_idx].group, bp2_idx)
     notify(bp_btn.clicks)
     @test count(s -> s.group == "BP", run) ==
@@ -515,8 +575,8 @@ end
     notify(result.state)
     result.method_choice[] = "U-Pb"
     refs = result.refs_panel
-    @test "91500" in refs.menus[][1].options[]
-    @test !("Hogsbo" in refs.menus[][1].options[])
+    @test "91500" in refs.rm_menus[1].options[]
+    @test !("Hogsbo" in refs.rm_menus[1].options[])
 end
 
 @testset "Process button runs KJ.process! and populates fit" begin
