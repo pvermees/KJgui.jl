@@ -197,7 +197,7 @@ table.i_selected[] = 1; sleep(0.2)
 p_ch, d_ch, s_ch = bp.p_channel[], bp.d_channel[], bp.sister_channel[]
 
 # Eagerly build the popup so its bboxes are valid before we click them.
-bp.ensure_popup!(); sleep(0.1); close!(bp.popup_ref[].popup); sleep(0.1)
+KJgui.ensure_popup!(bp); sleep(0.1); close!(bp.popup_ref[].popup); sleep(0.1)
 addr_pop = bp.popup_ref[]
 
 click_block!(fig, bp.add_btn; settle = 0.3)

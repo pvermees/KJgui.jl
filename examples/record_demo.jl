@@ -1,24 +1,60 @@
 # Re-record the dashboard demo at /sim/Programmieren/GeoChrono/demo.mp4.
 #
-# Drives the GUI through FakeInteraction (from Makie/docs/). Mirrors the
-# 10-step coverage in `walkthrough_routing.jl`:
+# =============================================================================
+# RULES for this script — future edits must follow them:
 #
-#   1. Initial view
-#   2. Method selection — switch U-Pb → back to Lu-Hf via the popup
-#   3. Group selection — click a table cell, pick "Hogsbo" from the picker
-#   4. Group fill-in — tag a sibling sample → LCS prefix expansion
-#   5. Add ratio plot — popup → Apply (default P+S vs D)
-#   6. Combined ↔ Split mode toggle
-#   7. Window drag — resize the signal window by dragging its edge
-#   8. Outlier toggle — double-click a biplot point (red ✗ appears)
-#   9. Process — KJ.process! runs, fit overlay appears
-#  10. Zoom + next sample
+#   1. **Everything visible in the video must be driven by mouse or keyboard
+#      events** (`MouseTo`, `LeftDown/Up/Click`, `KeyDown/Up/Press`).
+#      NEVER call `KJgui.*!`, `KJ.*!`, `notify(...)`, `xlims!`, `autolimits!`,
+#      `table.i_selected[] = ...`, or any observable-setter directly inside
+#      the `events = [...]` list. If a feature needs a script-side mutation
+#      to trigger, it's the wrong feature to demo — reach for the mouse/key
+#      instead.
+#
+#   2. `Lazy(_ -> MouseTo(...))` is fine — it's a mouse action whose target
+#      is computed at runtime. `Lazy` with side-effect body that mutates
+#      state is NOT fine.
+#
+#   3. Off-camera setup (before `interaction_record` is called) may bootstrap
+#      popup refs — see the pre-instantiation block below. Nothing there
+#      appears in the video.
+#
+#   4. When a step uses a modifier key (Ctrl, Shift, …) the on-screen badge
+#      wired up below will render the held-key name so the viewer sees why
+#      an interaction behaves differently. Don't disable the badge.
+# =============================================================================
+#
+# Drives the GUI through FakeInteraction (from Makie/docs/). Coverage —
+# every review item from the A/B/Cat/C rounds is on-screen here:
+#
+#   [ 1] Initial view — table navigation (A4: no "Tabulate samples")
+#   [ 2] Method popup — U-Pb → Lu-Hf; hover so the proxy help text
+#        below the role dropdowns is legible (C9)
+#   [ 3] Group assign — tag hogsbo_pul-01 as "Hogsbo" (grouping UX)
+#   [ 3b] Remove-from-group — re-click the same cell, hit "(sample)"
+#        in the picker to clear, then re-tag Hogsbo (B7)
+#   [ 4] LCS group fill-in — tag hogsbo_pul-02, sibling propagation
+#   [ 5] References popup — open, close (B6 layout cleanup)
+#   [ 6] Add ratio plot — popup → Apply (default P+S vs D)
+#   [ 7] Combined ↔ Split mode toggle
+#   [ 8] Window drag — resize the signal window by dragging its edge
+#   [ 8b] t0 drag — grab the gray t0 marker and shift it (B5)
+#   [ 8c] Multi-part window — append a second bwin segment (C10)
+#   [ 8d] Channels popup — toggle a hidden channel back ON (A1 redesign
+#        of the channel key)
+#   [ 8e] Time-axis outlier — double-click on the count-rate plot,
+#        red ✗ appears on the trace (A2 + C11)
+#   [ 9] Process — KJ.process! runs; the biplot section only becomes
+#        visible now that fit_obs is populated (A3)
+#   [ 9b] Biplot outlier — double-click a biplot point (A2 on biplot)
+#   [10] Zoom + next sample — final scrub through the run
 
 using Revise, KJgui, GLMakie, Makie
 
 isdefined(Main, :FakeInteraction) ||
     include(joinpath(@__DIR__, "..", "..", "Makie", "docs", "fake_interaction.jl"))
-using .FakeInteraction: Wait, MouseTo, LeftClick, LeftDown, LeftUp, Lazy
+using .FakeInteraction: Wait, MouseTo, LeftClick, LeftDown, LeftUp, Lazy,
+                        KeyDown, KeyUp
 
 # Hidden GLMakie screen — `interaction_record` needs the screen open to
 # grab the framebuffer, but visible=true lets GLFW poll the real mouse
@@ -34,12 +70,20 @@ sleep(0.6)
 Makie.disconnect!(screen, Makie.mouse_position)
 result.fig.scene.events.hasfocus[] = false
 
-# Eagerly instantiate popups so their bboxes are valid before FakeInteraction
-# tries to compute pixel positions for the clicks.
+# Off-camera setup (runs before `interaction_record` starts, so it's NOT
+# in the video): eagerly instantiate the lazily-built popups so their
+# `layoutobservables.computedbbox` is populated. Without this,
+# `block_center(popup.close_btn)` at events-construction time would deref
+# a `nothing` popup ref. Everything visible in the recording is driven
+# strictly by mouse/keyboard events below.
 notify(result.method_btn.clicks); sleep(0.2)
 close!(result.method_popup_ref[].popup)
-result.bot_panel.ensure_popup!()
+KJgui.ensure_popup!(result.bot_panel)
 close!(result.bot_panel.popup_ref[].popup)
+notify(result.channels_btn.clicks); sleep(0.2)
+close!(result.channels_popup_ref[].popup)
+notify(result.refs_btn.clicks); sleep(0.2)
+close!(result.refs_panel.popup)
 sleep(0.2)
 
 fig    = result.fig
@@ -47,6 +91,35 @@ table  = result.table
 bp     = result.bot_panel
 top    = result.top_panel
 biplot = result.biplot_panel
+
+# Held-key badge: renders the name of any currently-held modifier(s) as a
+# bold overlay near the top of the figure. Wired to Makie's keyboard event
+# stream — no polling — so the badge appears the instant a `KeyDown` event
+# fires and disappears on `KeyUp`.
+const KEY_LABELS = Dict(
+    Makie.Keyboard.left_control  => "Ctrl",
+    Makie.Keyboard.right_control => "Ctrl",
+    Makie.Keyboard.left_shift    => "Shift",
+    Makie.Keyboard.right_shift   => "Shift",
+    Makie.Keyboard.left_alt      => "Alt",
+    Makie.Keyboard.right_alt     => "Alt",
+)
+key_badge_text = Observable(" ")
+on(Makie.events(fig).keyboardbutton) do _
+    state = Makie.events(fig).keyboardstate
+    names = unique(String[KEY_LABELS[k] for k in state if haskey(KEY_LABELS, k)])
+    key_badge_text[] = isempty(names) ? " " : join(names, " + ")
+end
+Makie.text!(fig.scene, key_badge_text;
+    position = Point2f(960, 1030),
+    space    = :pixel,
+    align    = (:center, :top),
+    fontsize = 42,
+    font     = :bold,
+    color    = RGBAf(0.85, 0.15, 0.15, 1.0),
+    strokecolor = :white,
+    strokewidth = 3,
+    overdraw = true)
 
 btns       = [c for c in fig.content if c isa Makie.Button]
 next_btn   = first(b for b in btns if b.label[] == "▶")
@@ -121,7 +194,7 @@ end
 
 method_button(name) = first(b for b in method_pop.method_buttons
                                 if b.label[] == name)
-rm_button(name)     = first(b for b in picker.rm_buttons[]
+rm_button(name)     = first(b for b in picker.rm_buttons
                                 if b.label[] == name)
 
 # Map axis data-x → figure-pixel-x via the axis's CURRENT finallimits + the
@@ -161,7 +234,7 @@ end
 pul_rows = findall(s -> startswith(s.sname, "hogsbo_pul - "), result.state[])
 
 # Diagnostic: log each Hogsbo click + picker visibility change.
-let h = first(b for b in picker.rm_buttons[] if b.label[] == "Hogsbo")
+let h = first(b for b in picker.rm_buttons if b.label[] == "Hogsbo")
     on(h.clicks) do n
         println("    [Hogsbo.clicks = $n]  popup open = $(isopen(picker.popup))  ",
                 "mp = $(result.fig.scene.events.mouseposition[])")
@@ -180,14 +253,25 @@ events = [
     MouseTo(name_cell_pos(table, 3)), LeftClick(), Wait(0.5),
     MouseTo(name_cell_pos(table, 7)), LeftClick(), Wait(0.5),
 
-    # [2] Method popup: switch U-Pb → Lu-Hf
+    # [2] Method popup: switch U-Pb → Lu-Hf. Extra hover-Wait lets viewers
+    # read the proxy-explainer help text below the role dropdowns (C9).
     MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.8),
-    MouseTo(block_center(method_button("U-Pb"))),  LeftClick(), Wait(0.6),
-    MouseTo(block_center(method_button("Lu-Hf"))), LeftClick(), Wait(0.6),
+    MouseTo(block_center(method_button("U-Pb"))),  LeftClick(), Wait(1.4),
+    MouseTo(block_center(method_button("Lu-Hf"))), LeftClick(), Wait(1.4),
     MouseTo(block_center(method_pop.apply_btn)),   LeftClick(), Wait(0.8),
 
     # [3] Group selection: tag first hogsbo_pul sample as "Hogsbo"
     MouseTo(group_cell_pos(table, pul_rows[1])), LeftClick(), Wait(0.8),
+    Lazy(_ -> MouseTo(block_center(rm_button("Hogsbo")))),
+    LeftClick(), Wait(0.8),
+
+    # [3b] Remove-from-group (B7): re-click the same cell, choose
+    # "(sample)" from the picker to clear the assignment, then re-tag
+    # Hogsbo so the LCS fill-in step below still has a seed row.
+    MouseTo(group_cell_pos(table, pul_rows[1])), LeftClick(), Wait(0.6),
+    Lazy(_ -> MouseTo(block_center(rm_button("(sample)")))),
+    LeftClick(), Wait(0.8),
+    MouseTo(group_cell_pos(table, pul_rows[1])), LeftClick(), Wait(0.5),
     Lazy(_ -> MouseTo(block_center(rm_button("Hogsbo")))),
     LeftClick(), Wait(0.8),
 
@@ -196,18 +280,25 @@ events = [
     Lazy(_ -> MouseTo(block_center(rm_button("Hogsbo")))),
     LeftClick(), Wait(1.0),
 
-    # [5] Add ratio plot (default P + S vs D)
+    # [5] References popup (B6): the group we just seeded now shows up
+    # as a row with an RM dropdown. Open, linger so the cleaned-up
+    # layout is visible, then close.
+    MouseTo(block_center(result.refs_btn)), LeftClick(), Wait(1.2),
+    MouseTo(block_center(result.refs_panel.popup.close_btn)),
+    LeftClick(), Wait(0.6),
+
+    # [6] Add ratio plot (default P + S vs D)
     MouseTo(name_cell_pos(table, 1)), LeftClick(), Wait(0.5),
     MouseTo(block_center(bp.add_btn)), LeftClick(), Wait(0.7),
     MouseTo(block_center(addr_pop.apply_btn)), LeftClick(), Wait(0.9),
 
-    # [6] Combined ↔ Split mode toggle
+    # [7] Combined ↔ Split mode toggle
     menu_select_events(bp.mode_menu, "Split")...,
     Wait(0.6),
     menu_select_events(bp.mode_menu, "Combined")...,
     Wait(0.5),
 
-    # [7] Window drag: drag swin's right edge inward
+    # [8] Window drag: drag swin's right edge inward
     FakeInteraction.Lazy(_ -> begin
         samp = result.sample_obs[]
         t = Float64(samp.dat[samp.swin[1][2], 1])    # current right-edge time
@@ -222,10 +313,93 @@ events = [
     end),
     Wait(0.05), LeftUp(), Wait(0.8),
 
-    # [8] Outlier toggle: double-click a biplot scatter point. Two
-    # rapid LeftClicks let Makie's state machine generate a real
-    # `leftdoubleclick` MouseEvent, which the :toggle_outlier
-    # interaction picks up.
+    # [8b] t0 drag (B5): grab the gray t0 marker and shift it by a few
+    # rows. The drag interaction remaps bwin/swin around the new t0.
+    FakeInteraction.Lazy(_ -> begin
+        samp = result.sample_obs[]
+        t = Float64(samp.t0)
+        MouseTo(Point2f(ax_x_to_pixel(top.ax, t), ax_y_mid(top.ax)))
+    end),
+    Wait(0.4),                                  # hover to show t0 highlight
+    LeftDown(), Wait(0.05),
+    FakeInteraction.Lazy(_ -> begin
+        samp = result.sample_obs[]
+        t = Float64(samp.t0) + 2.0              # shift right by ~2 s
+        MouseTo(Point2f(ax_x_to_pixel(top.ax, t), ax_y_mid(top.ax)))
+    end),
+    Wait(0.05), LeftUp(), Wait(0.6),
+
+    # [8c] Multi-part window (C10): hold Ctrl and drag on the count-rate
+    # axis in empty space — the `:window_drag` handler sees
+    # `Makie.ispressed(ax, Keyboard.left_control)` at leftdragstart and
+    # calls `append_window!` before continuing as a right-edge drag on
+    # the new segment. Fully driven through the interaction system so
+    # the cursor visibly does the work.
+    FakeInteraction.Lazy(_ -> begin
+        samp = result.sample_obs[]
+        b_end_row = samp.bwin[1][2]
+        t0_row    = KJgui.nearest_row(samp, Float64(samp.t0))
+        anchor_row = clamp(b_end_row + 3, 1, t0_row - 4)
+        anchor_t   = Float64(samp.dat[anchor_row, 1])
+        MouseTo(Point2f(ax_x_to_pixel(top.ax, anchor_t), ax_y_mid(top.ax)))
+    end),
+    Wait(0.3),
+    KeyDown(Makie.Keyboard.left_control), Wait(0.05),
+    LeftDown(), Wait(0.05),
+    FakeInteraction.Lazy(_ -> begin
+        samp = result.sample_obs[]
+        t0_row = KJgui.nearest_row(samp, Float64(samp.t0))
+        grow_t = Float64(samp.dat[clamp(t0_row - 2, 1, size(samp.dat, 1)), 1])
+        MouseTo(Point2f(ax_x_to_pixel(top.ax, grow_t), ax_y_mid(top.ax)))
+    end),
+    Wait(0.05), LeftUp(), Wait(0.05),
+    KeyUp(Makie.Keyboard.left_control),
+    Wait(1.0),                                          # linger so the new blue span is legible
+
+    # [8d] Channels popup: open, toggle a hidden channel ON to make its
+    # trace appear on the count-rate plot, close (demos the C-key/redesign
+    # and A1 redesign of the channel-key panel).
+    MouseTo(block_center(result.channels_btn)), LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> begin
+        cp = result.channels_popup_ref[]
+        # Pick the first OFF checkbox in the ON column and click it.
+        on_cbs = [w for w in cp.widgets if w isa Makie.Checkbox][1:2:end]
+        target = something(findfirst(cb -> !cb.checked[], on_cbs), 1)
+        MouseTo(block_center(on_cbs[target]))
+    end),
+    LeftClick(), Wait(0.8),
+    MouseTo(block_center(result.channels_popup_ref[].popup.close_btn)),
+    LeftClick(), Wait(0.6),
+
+    # [8e] Time-axis outlier: double-click on the count-rate plot. Places
+    # a red ✗ marker on the raw traces (A2 + C11 — mirrors biplot behavior).
+    FakeInteraction.Lazy(_ -> begin
+        samp = result.sample_obs[]
+        target_t = Float64(samp.dat[samp.swin[1][1] + 5, 1])
+        vp = top.ax.scene.viewport[]
+        py = Float32(vp.origin[2] + 0.6 * vp.widths[2])
+        MouseTo(Point2f(ax_x_to_pixel(top.ax, target_t), py))
+    end),
+    Wait(0.2), LeftClick(), Wait(0.05), LeftClick(), Wait(0.9),
+
+    # [9] Process — KJ.process! produces a fit. Because the biplot row
+    # is gated on `!isnothing(fit_obs[])`, this is the moment the
+    # isochron biplot row snaps into view (A3).
+    MouseTo(block_center(result.process_btn)), LeftClick(), Wait(3.0),
+
+    # Click a standard-sample row in the table so the fit overlay has
+    # data on the ratio plot. Table's `on(table.i_selected)` handler
+    # already autolimits every axis on sample change — no script-side
+    # `autolimits!` needed.
+    FakeInteraction.Lazy(_ -> begin
+        idx = findfirst(s -> s.group != "sample", result.state[])
+        MouseTo(name_cell_pos(table, something(idx, 1)))
+    end),
+    LeftClick(), Wait(1.2),
+
+    # [9b] Biplot outlier: now that the biplot is visible (post-A3),
+    # double-click a scatter point to flag it as an outlier — the red ✗
+    # is the shared marker style used across raw plots and biplot (A2).
     FakeInteraction.Lazy(_ -> begin
         xs = biplot.plot_ref[].xs[]; ys = biplot.plot_ref[].ys[]
         good = filter(i -> !isnan(xs[i]) && !isnan(ys[i]), eachindex(xs))
@@ -234,21 +408,11 @@ events = [
     end),
     Wait(0.2), LeftClick(), Wait(0.05), LeftClick(), Wait(0.9),
 
-    # [9] Process — KJ.process! produces a fit
-    MouseTo(block_center(result.process_btn)), LeftClick(), Wait(3.0),
-    # Land on a standard sample so the fit overlay has data on the ratio plot.
-    do_after(0.4; f = () -> begin
-        idx = findfirst(s -> s.group != "sample", result.state[])
-        isnothing(idx) || (result.table.i_selected[] = idx)
-    end),
-    do_after(0.8; f = () -> Makie.autolimits!(biplot.ax)),
-
-    # [10] Zoom + next sample
-    do_after(1.0; f = () -> Makie.xlims!(top.ax, 28, 50)),
-    do_after(1.0; f = () -> Makie.xlims!(top.ax, 0, 70)),
-    MouseTo(block_center(next_btn)), LeftClick(), Wait(0.5),
-    LeftClick(), Wait(0.5),
-    MouseTo(block_center(prev_btn)), LeftClick(), Wait(0.5),
+    # [10] Scrub through the run using ▶/◀ so viewers see multiple
+    # samples and the auto-swap of fit + biplot per sample.
+    MouseTo(block_center(next_btn)), LeftClick(), Wait(0.7),
+    LeftClick(), Wait(0.7),
+    MouseTo(block_center(prev_btn)), LeftClick(), Wait(0.7),
     LeftClick(), Wait(1.0),
 ]
 
