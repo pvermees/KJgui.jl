@@ -2,13 +2,7 @@
 
 ```julia
 using Pkg
-Pkg.add([
-    PackageSpec(url="https://github.com/MakieOrg/Makie.jl.git", subdir="ComputePipeline", rev="sd/breaking-gui"),
-    PackageSpec(url="https://github.com/MakieOrg/Makie.jl.git", subdir="Makie",           rev="sd/breaking-gui"),
-    PackageSpec(url="https://github.com/MakieOrg/Makie.jl.git", subdir="GLMakie",         rev="sd/breaking-gui"),
-    PackageSpec(url="https://github.com/pvermees/KJ.jl",    rev="main"),
-    PackageSpec(url="https://github.com/pvermees/KJgui.jl", rev="sd/makie-gui2"),
-])
+pkg"add https://github.com/MakieOrg/Makie.jl.git#sd/breaking-gui:ComputePipeline https://github.com/MakieOrg/Makie.jl.git#sd/breaking-gui:Makie https://github.com/MakieOrg/Makie.jl.git#sd/breaking-gui:GLMakie https://github.com/pvermees/KJ.jl https://github.com/pvermees/KJgui.jl#sd/makie-gui2"
 ```
 
 Then `using KJgui; KJgui.run_gui(path="…")`.
