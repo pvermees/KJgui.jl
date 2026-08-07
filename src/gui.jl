@@ -13,7 +13,8 @@ standard) sits in a row above the plots.
 """
 function run_gui(; path::Union{Nothing,AbstractString}=nothing,
     format::AbstractString="Agilent")
-    fig = Figure(size=(1700, 1050))
+    set_theme!(colors = Makie.derive_colors(accent = RGBf(0.16, 0.52, 0.46)))
+    fig = Figure(size=(1700, 1050), backgroundcolor = RGBf(0.98, 0.98, 0.97))
 
     state = Observable{Union{Nothing,Vector{KJ.Sample}}}(nothing)
     ytransform = Observable{Function}(Makie.pseudolog10)
@@ -65,15 +66,19 @@ function build_dashboard!(fig::Figure,
     # `group → role`: `:standard`, `:massbias`, or `:none`.
     group_roles = Observable(Dict{String,Symbol}())
 
-    pathbox = Textbox(left[1, 1]; placeholder="data folder…", width=160)
-    format_menu = Menu(left[2, 1]; options=DATA_FORMATS,
+    # One click opens the native folder picker; the format is auto-inferred
+    # from the file extensions found in the folder (Agilent/ThermoFisher = .csv,
+    # FIN2 = .FIN). The format menu is kept as an override for the ambiguous
+    # .csv case.
+    format_menu = Menu(left[1, 1]; options=DATA_FORMATS,
                        default=default_format, width=160)
-    load_btn = Button(left[3, 1]; label="Read data files", width=160)
+    load_btn = Button(left[2, 1]; label="Load data folder…", width=160)
+    pathbox_label = Label(left[3, 1], "(no folder)"; fontsize=9,
+        color=RGBf(0.4, 0.4, 0.4), halign=:left, tellwidth=false, word_wrap=true)
     on(load_btn.clicks) do _
-        s = pathbox.stored_string[]
-        p = isnothing(s) ? "" : strip(String(s))
-        fmt = something(format_menu.selection[], default_format)
-        isempty(p) || load_path!(state, p, String(fmt))
+        picked = pick_folder()
+        isnothing(picked) || load_folder!(state, format_menu, pathbox_label,
+                                          picked, default_format)
     end
 
     method_btn = Button(left[4, 1];
@@ -93,7 +98,9 @@ function build_dashboard!(fig::Figure,
         if lbl == "Process data"
             process_btn = b
             on(b.clicks) do _
-                run_process!(state, method, fit_obs; process_btn=process_btn)
+                run_process!(state, method, fit_obs;
+                    process_btn=process_btn, spinner=biplot_panel.spinner,
+                    fig=fig)
             end
         else
             on(b.clicks) do _
@@ -122,14 +129,14 @@ function build_dashboard!(fig::Figure,
     register_window_drag!(top_panel, sample_obs)
     register_outlier_toggle!(top_panel.ax, sample_obs)
 
-    panel_strip = right[5, 1:2] = GridLayout()
-    plot_type_menu = Menu(panel_strip[1, 1];
-        options=["Isochron", "Concordia"], default="Isochron", width=140)
-    biplot_cb = Checkbox(panel_strip[1, 2]; checked=true)
-    Label(panel_strip[1, 3], "on"; halign=:left, fontsize=10, tellwidth=false)
-    Label(panel_strip[1, 4], ""; tellwidth=false)
-    colgap!(panel_strip, 8)
-    rowsize!(right, 5, Fixed(30))
+    # Biplot controls live with the other top-of-window plot controls
+    # (log/linear picker, prev/next). Anchored at the right edge of the
+    # top strip.
+    ctrls = top_panel.ctrls
+    Label(ctrls[1, 5], "biplot"; halign=:right, fontsize=10, tellwidth=true)
+    plot_type_menu = Menu(ctrls[1, 6];
+        options=["Isochron", "Concordia"], default="Isochron", width=110)
+    biplot_cb = Checkbox(ctrls[1, 7]; checked=true)
     on(v -> (biplot_visible[] = v), biplot_cb.checked)
     on(plot_type_menu.selection) do sel
         sel === nothing && return
@@ -143,14 +150,31 @@ function build_dashboard!(fig::Figure,
     # `right` column 2 is unused (Key lives in `mid`).
     colsize!(right, 2, Fixed(0))
 
+    # One popup variant per method type (Gmethod: P/D/d roles;
+    # Cmethod: internal-standard picker). Same-type reopens reuse the
+    # cached instance; type flips destroy and rebuild.
     function ensure_method_popup!()
-        isnothing(method_popup_ref[]) || return method_popup_ref[]
-        method_popup_ref[] = build_method_popup!(fig, bot_panel)
+        for_cmethod = method_choice[] == CONCENTRATION_OPTION
+        cur = method_popup_ref[]
+        if isnothing(cur) || cur.is_cmethod != for_cmethod
+            if !isnothing(cur)
+                try close!(cur.modal) catch _ end
+            end
+            method_popup_ref[] = build_method_popup!(fig, bot_panel; for_cmethod=for_cmethod)
+        end
         return method_popup_ref[]
     end
     on(method_btn.clicks) do _
         isempty(bot_panel.channels_obs[]) && return
         open_with_defaults!(ensure_method_popup!())
+    end
+    # Auto-reopen with the correct type when the user picks a
+    # different-type method inside the popup.
+    on(method_choice) do _
+        cur = method_popup_ref[]
+        if !isnothing(cur) && isopen(cur.modal)
+            open_with_defaults!(ensure_method_popup!())
+        end
     end
 
     function ensure_refs_popup!()
@@ -177,7 +201,7 @@ function build_dashboard!(fig::Figure,
     end
     on(channels_btn.clicks) do _
         cp = ensure_channels_popup!()
-        isnothing(cp) || open!(cp.popup)
+        isnothing(cp) || open!(cp.modal)
     end
 
     group_state = GroupState(state, method_choice, group_rm_assignments)
@@ -191,17 +215,23 @@ function build_dashboard!(fig::Figure,
         open_with_defaults!(group_picker, samp.sname, samp.group, row)
     end
 
-    # Biplot needs a fit — raw P/D/d ratios don't yield a sensible isochron.
-    onany(biplot_visible, method, fit_obs; update=true) do vis, m, fit
-        show = vis && !(m isa KJ.Cmethod) && !isnothing(fit)
-        rowsize!(right, 6, show ? Auto() : Fixed(0))
-        set_block_visible!(biplot_panel.ax, show)
+    # Section is visible whenever a fit exists or the spinner is busy
+    # (the spinner needs a pane to render into). The axis only shows on
+    # fit; while busy, only the spinner is in the cell.
+    busy = biplot_panel.spinner.running
+    onany(biplot_visible, method, fit_obs, busy; update=true) do vis, m, fit, b
+        section_show = vis && !(m isa KJ.Cmethod) && (!isnothing(fit) || b)
+        axis_show    = vis && !(m isa KJ.Cmethod) && !isnothing(fit) && !b
+        rowsize!(right, 6, section_show ? Auto() : Fixed(0))
+        set_block_visible!(biplot_panel.ax, axis_show)
     end
 
-    # Header strip stays visible pre-Process (checkbox is discoverable);
-    # Cmethod has no biplot at all, so it collapses.
-    on(method; update=true) do m
-        rowsize!(right, 5, m isa KJ.Cmethod ? Fixed(0) : Fixed(30))
+    # Hide the biplot controls (plot type + on/off) for Cmethod, which has
+    # no biplot at all.
+    onany(method; update=true) do m
+        show = !(m isa KJ.Cmethod)
+        set_block_visible!(plot_type_menu, show)
+        set_block_visible!(biplot_cb, show)
         apply_mode_layout!(bot_panel, m)
         refresh_config_group!(bot_panel)
     end
@@ -247,18 +277,24 @@ function build_dashboard!(fig::Figure,
               refs_btn, refs_popup_ref, group_picker,
               method_choice, method_btn, method_popup_ref, biplot_visible,
               group_rm_assignments, group_roles, process_btn,
-              load_btn, pathbox, format_menu,
+              load_btn, format_menu, pathbox_label,
               channels_btn, channels_popup_ref,
-              panel_strip, plot_type_menu, biplot_cb)
+              plot_type_menu, biplot_cb)
 end
 
 """
 Run `KJ.process!` on the current run + method. `@warn`s on missing data /
-method / RM groups instead of throwing. If a Button is passed its label
-flashes to "Processing…" while the (synchronous) fit runs.
+method / RM groups instead of throwing. When a `spinner::Spinner` is
+passed, the heavy fit runs on a worker thread (`Threads.@spawn`) while
+the render loop animates the spinner. `fit_obs` and button-restore run
+on the main thread once the compute finishes. Requires
+`julia --threads=auto` for real parallelism; with one thread the compute
+falls back to the main task and the spinner will freeze.
 """
 function run_process!(state::Observable, method::Observable, fit_obs::Observable;
-                      process_btn::Union{Nothing,Makie.Button}=nothing)
+                      process_btn::Union{Nothing,Makie.Button}=nothing,
+                      spinner::Union{Nothing,Makie.Spinner}=nothing,
+                      fig::Union{Nothing,Figure}=nothing)
     run = state[]
     m = method[]
     if isnothing(run) || isempty(run)
@@ -273,21 +309,72 @@ function run_process!(state::Observable, method::Observable, fit_obs::Observable
         @warn "Process: assign at least one Reference Material in the References panel"
         return
     end
+    # Reject re-entry while a fit is in flight — `spinner.running` stays
+    # true from start until the tick handler finalises.
+    if !isnothing(spinner) && spinner.running[]
+        @warn "Process: a fit is already running"
+        return
+    end
     original_label = nothing
+    original_color = nothing
     if !isnothing(process_btn)
         original_label = process_btn.label[]
+        original_color = process_btn.buttoncolor[]
         process_btn.label[] = "Processing…"
-        yield()  # Let the label repaint before `KJ.process!` blocks.
+        process_btn.buttoncolor[] = RGBf(0.85, 0.90, 1.00)
     end
-    try
-        fit_obs[] = KJ.process!(run, m)
-        @info "Process complete" fit=typeof(fit_obs[])
-    catch err
-        @warn "Process failed" exception=(err, catch_backtrace())
-    finally
-        isnothing(process_btn) ||
-            (process_btn.label[] = something(original_label, "Process data"))
+    finalize! = () -> begin
+        isnothing(spinner) || (spinner.running = false)
+        if !isnothing(process_btn)
+            process_btn.label[] = something(original_label, "Process data")
+            isnothing(original_color) ||
+                (process_btn.buttoncolor[] = original_color)
+        end
     end
+    isnothing(spinner) || (spinner.running = true)
+
+    if isnothing(fig)
+        # Sync fallback (tests, headless without a render loop). Spinner
+        # shows one frame and freezes for the duration of the fit.
+        try
+            yield()
+            fit_obs[] = KJ.process!(run, m)
+        catch err
+            @warn "Process failed" exception=(err, catch_backtrace())
+        finally
+            finalize!()
+        end
+        return
+    end
+
+    # `KJ.process!` runs on a worker thread, its result is handed back
+    # via a Channel, and picked up by a tick listener that fires on the
+    # render task — so `fit_obs[] =` and its downstream `autolimits!`
+    # never race GLMakie's compute graph. Requires --threads=auto.
+    # Payload is `(:ok, fit)` / `(:err, exc, bt)` so a Cfit/Gfit that
+    # happens to be `<: Exception` in some future refactor won't be
+    # misread as failure.
+    chan = Channel{Tuple}(1)
+    listener = Ref{Any}(nothing)
+    listener[] = on(events(fig).tick) do _
+        isready(chan) || return
+        payload = take!(chan)
+        off(listener[])
+        if payload[1] === :ok
+            fit_obs[] = payload[2]
+        else
+            @warn "Process failed" exception=(payload[2], payload[3])
+        end
+        finalize!()
+    end
+    @async begin
+        try
+            put!(chan, (:ok, fetch(Threads.@spawn KJ.process!(run, m))))
+        catch err
+            put!(chan, (:err, err, catch_backtrace()))
+        end
+    end
+    return
 end
 
 function build_sample_table!(mid::GridLayout, state::Observable, fig::Figure;
@@ -381,14 +468,14 @@ function build_count_rate_panel!(right::GridLayout,
     on(_ -> navigate!(table, state, -1), prev_btn.clicks)
     on(_ -> navigate!(table, state, +1), next_btn.clicks)
 
-    return (; ax,
+    return (; ax, ctrls, ymenu,
         plot_ref = Ref{Union{Nothing, Makie.AbstractPlot}}(nothing),
         right_layout = right)
 end
 
 function ensure_count_rate_plot!(panel, sample_obs::Observable, bp)
     isnothing(panel.plot_ref[]) || return
-    sp = sampleplot!(panel.ax, sample_obs)
+    sp = sampleplot!(panel.ax, sample_obs; fit = bp.fit_obs, method = bp.method_obs)
     # First build: seed defaults so the plot doesn't render 30 overlapping
     # channels. User picks after this are preserved for the session.
     default_channel_visibility!(sp, bp.channels_obs[],
@@ -411,7 +498,7 @@ follow the loaded data. Each row is `swatch | name | ON | HL`; defaults
 to only P/D/d ON so the time-resolved plot isn't drowning in clutter.
 """
 struct ChannelsPopup
-    popup::Popup
+    modal::Modal
     grid::GridLayout
     widgets::Vector{Makie.Block}
     sp::SamplePlot
@@ -424,9 +511,9 @@ end
 function build_channels_popup!(fig::Figure, sp::SamplePlot,
     channels_obs::Observable,
     p_channel::Observable, d_channel::Observable, sister_channel::Observable)
-    pop = Popup(fig; min_size=(360, 200), title="Channels")
-    grid = pop.layout[1, 1] = GridLayout()
-    popup = ChannelsPopup(pop, grid, Makie.Block[], sp, channels_obs,
+    modal = Modal(fig; min_size=(360, 200), title="Channels")
+    grid = modal.layout[1, 1] = GridLayout()
+    popup = ChannelsPopup(modal, grid, Makie.Block[], sp, channels_obs,
         p_channel, d_channel, sister_channel)
     rebuild!(popup)
     on(_ -> rebuild!(popup), channels_obs)
@@ -585,7 +672,7 @@ a back-reference to `BottomPanel` so Apply can call `add_def!(bp, ns, d)`
 through the dispatched API.
 """
 struct AddRatioPopup
-    popup::Popup
+    modal::Modal
     apply_btn::Makie.Button
     cancel_btn::Makie.Button
     n_boxes::Vector{Makie.Checkbox}
@@ -610,9 +697,9 @@ end
 
 function build_add_ratio_popup!(fig::Figure, channels_obs::Observable, bp,
     p_channel::Observable, d_channel::Observable, sister_channel::Observable)
-    pop = Popup(fig; size=(340, 380), title="Add ratio plot")
+    modal = Modal(fig; title="Add ratio plot", min_size=(320, 200))
 
-    content = pop.layout[1, 1] = GridLayout()
+    content = modal.layout[1, 1] = GridLayout()
     Label(content[1, 1], "Channel"; halign=:left, fontsize=11,
         font=:bold, tellwidth=false)
     Label(content[1, 2], "N"; fontsize=11, font=:bold)
@@ -621,21 +708,21 @@ function build_add_ratio_popup!(fig::Figure, channels_obs::Observable, bp,
     colsize!(content, 3, Fixed(28))
     colgap!(content, 8)
 
-    footer = pop.layout[2, 1] = GridLayout()
+    footer = modal.layout[2, 1] = GridLayout()
     apply_btn  = Button(footer[1, 1]; label="Apply",  width=80)
     cancel_btn = Button(footer[1, 2]; label="Cancel", width=80)
     Label(footer[1, 3], ""; tellwidth=false)
     colgap!(footer, 8)
-    rowsize!(pop.layout, 2, Fixed(36))
+    rowsize!(modal.layout, 2, Fixed(36))
 
-    popup = AddRatioPopup(pop, apply_btn, cancel_btn,
+    popup = AddRatioPopup(modal, apply_btn, cancel_btn,
         Makie.Checkbox[], Makie.Checkbox[], Makie.Label[],
         content, channels_obs, p_channel, d_channel, sister_channel, bp)
     rebuild!(popup)
     on(_ -> rebuild!(popup), channels_obs)
 
     on(apply_btn.clicks) do _
-        isopen(pop) || return
+        isopen(modal) || return
         chans = channels_obs[]
         ns, d = String[], ""
         for (i, ch) in enumerate(chans)
@@ -644,11 +731,11 @@ function build_add_ratio_popup!(fig::Figure, channels_obs::Observable, bp,
         end
         (isempty(ns) || isempty(d)) && return
         add_def!(popup.bp, ns, d)
-        close!(pop)
+        close!(modal)
     end
     on(cancel_btn.clicks) do _
-        isopen(pop) || return
-        close!(pop)
+        isopen(modal) || return
+        close!(modal)
     end
     return popup
 end
@@ -678,7 +765,7 @@ function rebuild!(p::AddRatioPopup)
     return
 end
 
-open_with_defaults!(p::AddRatioPopup) = (rebuild!(p); open!(p.popup); p)
+open_with_defaults!(p::AddRatioPopup) = (rebuild!(p); open!(p.modal); p)
 
 """
 Method-picker popup. Every field is data — layouts/widgets, the
@@ -691,17 +778,19 @@ lives in free functions below that dispatch on `MethodPopup`.
 the dispatched API instead of a stored callback.
 """
 struct MethodPopup
-    popup::Popup
+    modal::Modal
     selected_idx::Observable
     role_P::Observable{Int}
     role_D::Observable{Int}
     role_d::Observable{Int}
-    chan_rows::Vector{Tuple{Makie.Label,Makie.Menu}}
+    # Populated for Gmethod popups only (empty dicts for Cmethod).
+    role_menus::Dict{Symbol, Makie.Menu}
     method_buttons::Vector{Makie.Button}
     proxy_menus::Dict{Symbol, Makie.Menu}
+    # Populated for Cmethod popups only.
+    internal_menu::Union{Nothing, Makie.Menu}
     apply_btn::Makie.Button
     cancel_btn::Makie.Button
-    chan_grid::GridLayout
     methods::Vector{String}
     method_choice::Observable{String}
     channels_obs::Observable{Vector{String}}
@@ -714,6 +803,7 @@ struct MethodPopup
     setting_roles::Base.RefValue{Bool}
     setting_proxy::Base.RefValue{Bool}
     bp::BottomPanelBase
+    is_cmethod::Bool
 end
 
 const METHOD_ROLES = ("—", "P", "D", "d")
@@ -734,74 +824,29 @@ function infer_proxy(channel::AbstractString, default_ion::AbstractString)
     return isnothing(p) ? default_ion : p
 end
 
-function clear_role_from_others!(m::MethodPopup, role::AbstractString, keep_i::Int)
+"Set the role's channel by index (1-based into channels_obs).
+i==0 clears the selection."
+function set_role!(m::MethodPopup, i::Int, ion_role::Symbol)
+    menu = m.role_menus[ion_role]
     m.setting_roles[] = true
     try
-        for (j, (_, menu)) in enumerate(m.chan_rows)
-            if j != keep_i && something(menu.selection[], "") == role
-                menu.i_selected[] = 1
-            end
-        end
+        i == 0 ? (menu.i_selected[] = 0) : (menu.i_selected[] = i)
     finally
         m.setting_roles[] = false
     end
-end
-
-function rebuild!(m::MethodPopup)
-    delete_all!(m.chan_rows)
-    m.role_P[] = m.role_D[] = m.role_d[] = 0
-
-    chans = m.channels_obs[]
-    isempty(chans) && return
-
-    for (i, ch) in enumerate(chans)
-        lbl  = Label(m.chan_grid[i, 1], "$(i). $ch";
-                                halign=:left, fontsize=10, tellwidth=false)
-        menu = Menu(m.chan_grid[i, 2]; options=collect(METHOD_ROLES),
-                               default="—", width=56, height=22,
-                               fontsize=10, textpadding=(4, 4, 2, 2))
-        on(menu.selection) do role
-            m.setting_roles[] && return
-            if role == "P"
-                m.role_P[] = i; clear_role_from_others!(m, "P", i)
-            elseif role == "D"
-                m.role_D[] = i; clear_role_from_others!(m, "D", i)
-            elseif role == "d"
-                m.role_d[] = i; clear_role_from_others!(m, "d", i)
-            else
-                m.role_P[] == i && (m.role_P[] = 0)
-                m.role_D[] == i && (m.role_D[] = 0)
-                m.role_d[] == i && (m.role_d[] = 0)
-            end
-        end
-        push!(m.chan_rows, (lbl, menu))
-    end
-    rowgap!(m.chan_grid, 2)
-end
-
-function set_role!(m::MethodPopup, i::Int, role::AbstractString)
-    (i == 0 || i > length(m.chan_rows)) && return
-    ri = findfirst(==(role), METHOD_ROLES)
-    isnothing(ri) || (m.chan_rows[i][2].i_selected[] = ri)
 end
 
 function apply_method_defaults!(m::MethodPopup, mname::AbstractString)
     chans = m.channels_obs[]
     isempty(chans) && return
-    m.setting_roles[] = true
-    try
-        for (_, menu) in m.chan_rows
-            menu.i_selected[] = 1
-        end
-        m.role_P[] = m.role_D[] = m.role_d[] = 0
-    finally
-        m.setting_roles[] = false
+    if mname == CONCENTRATION_OPTION
+        set_role!(m, 0, :P); set_role!(m, 0, :D); set_role!(m, 0, :d)
+        return
     end
-    mname == CONCENTRATION_OPTION && return
     sug = suggest_channel_indices(mname, chans)
-    set_role!(m, sug.P, "P")
-    set_role!(m, sug.D, "D")
-    set_role!(m, sug.d, "d")
+    set_role!(m, sug.P, :P)
+    set_role!(m, sug.D, :D)
+    set_role!(m, sug.d, :d)
 end
 
 function refresh_proxy_menu!(m::MethodPopup, ion_role::Symbol, role_obs::Observable)
@@ -835,17 +880,17 @@ function open_with_defaults!(m::MethodPopup)
     midx = findfirst(==(m.method_choice[]), m.methods)
     if !isnothing(midx) && midx != m.selected_idx[]
         m.selected_idx[] = midx     # fires apply_method_defaults! via on(selected_idx)
-    else
+    elseif !m.is_cmethod
         apply_method_defaults!(m, m.method_choice[])
     end
-    if m.method_choice[] != CONCENTRATION_OPTION
-        for (ch_obs, role) in ((m.p_channel,       "P"),
-                               (m.d_channel,       "D"),
-                               (m.sister_channel,  "d"))
+    if !m.is_cmethod && m.method_choice[] != CONCENTRATION_OPTION
+        for (ch_obs, sym) in ((m.p_channel, :P),
+                              (m.d_channel, :D),
+                              (m.sister_channel, :d))
             ch = ch_obs[]
             isempty(ch) && continue
             i = findfirst(==(ch), chans)
-            isnothing(i) || set_role!(m, i, role)
+            isnothing(i) || set_role!(m, i, sym)
         end
         for (proxy_obs, sym) in ((m.p_proxy, :P), (m.d_proxy, :D),
                                  (m.sister_proxy, :d))
@@ -863,23 +908,38 @@ function open_with_defaults!(m::MethodPopup)
             end
         end
     end
-    open!(m.popup)
+    # Seed the internal-standard picker for Cmethod from `bp.internal_menu`
+    # so re-opening the popup shows the current choice.
+    if m.is_cmethod && !isnothing(m.internal_menu)
+        cur = m.bp.internal_menu.selection[]
+        if cur isa AbstractString && !isempty(m.internal_menu.options[])
+            i = findfirst(==(cur), m.internal_menu.options[])
+            isnothing(i) || (m.internal_menu.i_selected[] = i)
+        end
+    end
+    open!(m.modal)
     return m
 end
 
 """
-Method-selection popup: decay-system buttons on the left, channels with
-mutually-exclusive "—/P/D/d" role dropdowns on the right, P/D/d Pairing
-summary plus proxy-isotope override menus below. Apply commits through
-`commit_method!(bp, …)` (the `BottomPanel` reference is stored on the
-returned `MethodPopup`, no callback field).
+Method-selection popup: decay-system buttons on the left; the right pane
+holds EITHER the P/D/d role grid (Gmethod) OR the internal-standard
+picker (Cmethod), depending on `for_cmethod`. The popup is rebuilt from
+scratch every time it opens so switching between Gmethod ↔ Cmethod
+doesn't leak stale widgets — Modal-hosted Menus don't hide reliably.
+
+Apply commits through `commit_method!(bp, …)`; clicking a method button
+whose type differs from the popup's build type closes and reopens the
+popup fresh (handled by the caller in `ensure_method_popup!`).
 """
-function build_method_popup!(fig::Figure, bp)
-    pop = Popup(fig; size=(620, 760), title="Method")
+function build_method_popup!(fig::Figure, bp; for_cmethod::Bool)
+    modal = Modal(fig; title="Method",
+                  min_size=for_cmethod ? (500, 220) : (540, 260))
     methods = [method_names(); CONCENTRATION_OPTION]
 
-    selected_idx = Observable(findfirst(==(bp.method_choice[]), methods))
-    left_pane = pop.layout[1, 1] = GridLayout()
+    initial_choice = for_cmethod ? CONCENTRATION_OPTION : bp.method_choice[]
+    selected_idx = Observable(findfirst(==(initial_choice), methods))
+    left_pane = modal.layout[1, 1] = GridLayout()
     method_buttons = Makie.Button[]
     for (i, m) in enumerate(methods)
         bcolor = lift(s -> i == s ? RGBf(0.78, 0.85, 1.0) : RGBf(0.96, 0.96, 0.96),
@@ -889,87 +949,139 @@ function build_method_popup!(fig::Figure, bp)
                                     buttoncolor=bcolor))
     end
 
-    right_pane = pop.layout[1, 2] = GridLayout()
-    chan_grid  = right_pane[1, 1] = GridLayout()
-    Label(right_pane[2, 1],
-        "Proxy = the isotope actually measured for each role. " *
-        "Auto-inferred from channel names — override when the CSV " *
-        "header lacks the mass number (e.g. \"ch1\", \"175\").";
-        halign=:left, justification=:left, fontsize=9,
-        color=RGBf(0.35, 0.35, 0.35), word_wrap=true, tellwidth=false)
-    sum_grid = right_pane[3, 1] = GridLayout()
-    rowsize!(right_pane, 2, Fixed(38))
-    rowsize!(right_pane, 3, Fixed(96))
+    right_pane = modal.layout[1, 2] = GridLayout()
 
     role_P = Observable(0)
     role_D = Observable(0)
     role_d = Observable(0)
-
+    role_labels = Dict{Symbol,Makie.Label}()
+    role_menus  = Dict{Symbol,Makie.Menu}()
     proxy_menus = Dict{Symbol,Makie.Menu}()
-    for (row, role_obs, ion_role) in ((1, role_P, :P), (2, role_D, :D), (3, role_d, :d))
-        Label(sum_grid[row, 1],
-            lift(role_obs, bp.channels_obs, selected_idx) do i, chans, midx
-                midx === nothing && return "$(ion_role): —"
-                mname = methods[midx]
-                mname == CONCENTRATION_OPTION && return ""
-                ions = default_ions(mname)
-                ion = getproperty(ions, ion_role)
-                (i == 0 || i > length(chans)) &&
-                    return "$(ion_role)  =  $ion  (no channel assigned)"
-                return "$(ion_role)  =  $ion   ←   $(chans[i])"
-            end;
-            halign=:left, fontsize=10, font=:bold, tellwidth=false)
-        proxy_menus[ion_role] = Menu(sum_grid[row, 2]; options=String["—"],
-            default=nothing, width=100, height=22, fontsize=10,
-            textpadding=(4, 4, 2, 2))
-    end
-    colsize!(sum_grid, 1, Auto(true, 1.0))
-    colsize!(sum_grid, 2, Fixed(110))
+    proxy_labels = Dict{Symbol,Makie.Label}()
+    internal_menu_pop = nothing
 
-    footer = pop.layout[2, 1:2] = GridLayout()
+    if for_cmethod
+        conc_grid = right_pane[1, 1] = GridLayout()
+        Label(conc_grid[1, 1], "Internal standard:";
+            halign=:right, fontsize=12, font=:bold, tellwidth=true)
+        internal_menu_pop = Menu(conc_grid[1, 2];
+            options=collect(bp.channels_obs[]), default=nothing, width=200)
+        Label(conc_grid[2, 1:2],
+            "The isotope you'll use to normalise counts to concentrations. " *
+            "One measurement typically has a well-known concentration in the RM " *
+            "(e.g. Al27 in NIST612 = 11167 ppm).";
+            halign=:left, justification=:left, fontsize=9,
+            color=RGBf(0.35, 0.35, 0.35), word_wrap=true, tellwidth=false)
+        colgap!(conc_grid, 10); rowgap!(conc_grid, 8)
+        colsize!(conc_grid, 2, Fixed(200))
+    else
+        # One row per P/D/d role: channel picker + proxy-isotope override.
+        role_grid = right_pane[1, 1] = GridLayout()
+        for (row, role_obs, ion_role) in ((1, role_P, :P), (2, role_D, :D), (3, role_d, :d))
+            role_labels[ion_role] = Label(role_grid[row, 1],
+                lift(selected_idx) do midx
+                    midx === nothing && return "$(ion_role): —"
+                    mname = methods[midx]
+                    mname == CONCENTRATION_OPTION && return ""
+                    ion = getproperty(default_ions(mname), ion_role)
+                    return "$(ion_role)  =  $ion   ←"
+                end;
+                halign=:right, fontsize=12, font=:bold, tellwidth=true)
+            role_menus[ion_role] = Menu(role_grid[row, 2];
+                options=collect(bp.channels_obs[]), default=nothing,
+                width=200, searchable=true)
+            proxy_labels[ion_role] = Label(role_grid[row, 3], "proxy:";
+                halign=:right, fontsize=10, tellwidth=true,
+                color=RGBf(0.4, 0.4, 0.4))
+            proxy_menus[ion_role] = Menu(role_grid[row, 4]; options=String["—"],
+                default=nothing, width=100, fontsize=10)
+        end
+        colgap!(role_grid, 10); rowgap!(role_grid, 8)
+        colsize!(role_grid, 2, Fixed(200))
+        colsize!(role_grid, 4, Fixed(100))
+
+        Label(right_pane[2, 1],
+            "Proxy = the isotope actually measured for each role. " *
+            "Auto-inferred from channel names — override when the CSV " *
+            "header lacks the mass number (e.g. \"ch1\", \"175\").";
+            halign=:left, justification=:left, fontsize=9,
+            color=RGBf(0.35, 0.35, 0.35), word_wrap=true, tellwidth=false)
+        rowsize!(right_pane, 2, Fixed(42))
+
+        # Role-menu → role_P/D/d wiring. i_selected on the Menu is the index
+        # into channels_obs, which matches role_*_[]'s semantics exactly.
+        for (ion_role, role_obs) in ((:P, role_P), (:D, role_D), (:d, role_d))
+            on(role_menus[ion_role].i_selected) do i
+                role_obs[] = isnothing(i) ? 0 : i
+            end
+        end
+    end
+
+    footer = modal.layout[2, 1:2] = GridLayout()
     apply_btn  = Button(footer[1, 1]; label="Apply",  width=80)
     cancel_btn = Button(footer[1, 2]; label="Cancel", width=80)
     Label(footer[1, 3], ""; tellwidth=false)
     colgap!(footer, 8)
-    rowsize!(pop.layout, 2, Fixed(36))
-    colsize!(pop.layout, 1, Fixed(110))
+    rowsize!(modal.layout, 2, Fixed(36))
+    colsize!(modal.layout, 1, Fixed(110))
 
-    popup = MethodPopup(pop, selected_idx, role_P, role_D, role_d,
-        Tuple{Makie.Label,Makie.Menu}[],
-        method_buttons, proxy_menus, apply_btn, cancel_btn,
-        chan_grid, methods, bp.method_choice, bp.channels_obs,
+    popup = MethodPopup(modal, selected_idx, role_P, role_D, role_d,
+        role_menus, method_buttons, proxy_menus, internal_menu_pop,
+        apply_btn, cancel_btn,
+        methods, bp.method_choice, bp.channels_obs,
         bp.p_channel, bp.d_channel, bp.sister_channel,
         bp.p_proxy, bp.d_proxy, bp.sister_proxy,
-        Ref(false), Ref(false), bp)
+        Ref(false), Ref(false), bp, for_cmethod)
 
+    # A method-button click that would switch types (Gmethod ↔ Cmethod)
+    # closes the popup — the caller reopens a fresh popup of the right
+    # type. Same-type clicks just update selected_idx.
     for (i, btn) in enumerate(method_buttons)
         on(btn.clicks) do _
-            isopen(pop) || return
-            selected_idx[] = i
+            isopen(modal) || return
+            picked_is_conc = methods[i] == CONCENTRATION_OPTION
+            if picked_is_conc != for_cmethod
+                bp.method_choice[] = methods[i]  # so next open builds correct type
+                close!(modal)
+            else
+                selected_idx[] = i
+            end
         end
     end
 
-    on(selected_idx) do i
-        i === nothing && return
-        apply_method_defaults!(popup, methods[i])
-    end
-
-    for (role_obs, sym) in ((role_P, :P), (role_D, :D), (role_d, :d))
-        on(_ -> refresh_proxy_menu!(popup, sym, role_obs), role_obs)
-    end
-    on(selected_idx) do _
+    if !for_cmethod
+        on(selected_idx) do i
+            i === nothing && return
+            apply_method_defaults!(popup, methods[i])
+        end
         for (role_obs, sym) in ((role_P, :P), (role_D, :D), (role_d, :d))
-            refresh_proxy_menu!(popup, sym, role_obs)
+            on(_ -> refresh_proxy_menu!(popup, sym, role_obs), role_obs)
+        end
+        on(selected_idx) do _
+            for (role_obs, sym) in ((role_P, :P), (role_D, :D), (role_d, :d))
+                refresh_proxy_menu!(popup, sym, role_obs)
+            end
+        end
+        on(bp.channels_obs) do _
+            midx = selected_idx[]
+            midx === nothing || apply_method_defaults!(popup, methods[midx])
         end
     end
 
     on(apply_btn.clicks) do _
-        isopen(pop) || return
+        isopen(modal) || return
         midx = something(selected_idx[], 0)
         midx == 0 && return
         mname = methods[midx]
         chans = bp.channels_obs[]
-        if mname == CONCENTRATION_OPTION
+        if for_cmethod
+            # Mirror the popup's internal-standard pick into
+            # `bp.internal_menu`; `rebuild_method!` will read from there.
+            sel = internal_menu_pop.selection[]
+            if sel isa AbstractString && sel in bp.internal_menu.options[]
+                bp.internal_menu.i_selected[] =
+                    something(findfirst(==(sel), bp.internal_menu.options[]), 1)
+            end
             commit_method!(bp, mname, "", "", "")
         else
             (role_P[] == 0 || role_D[] == 0 || role_d[] == 0) && return
@@ -980,19 +1092,13 @@ function build_method_popup!(fig::Figure, bp)
                 chans[role_P[]], chans[role_D[]], chans[role_d[]];
                 p_pr=String(p_pr), d_pr=String(d_pr), s_pr=String(s_pr))
         end
-        close!(pop)
+        close!(modal)
     end
     on(cancel_btn.clicks) do _
-        isopen(pop) || return
-        close!(pop)
+        isopen(modal) || return
+        close!(modal)
     end
 
-    on(bp.channels_obs) do _
-        rebuild!(popup)
-        midx = selected_idx[]
-        midx === nothing || apply_method_defaults!(popup, methods[midx])
-    end
-    rebuild!(popup)
     return popup
 end
 
@@ -1151,6 +1257,9 @@ struct BottomPanel <: BottomPanelBase
 end
 
 conc_blocks(bp::BottomPanel) = (bp.internal_label, bp.internal_menu)
+
+"Ratio-plot controls that only apply to Gmethods (+ Add ratio plot, Combined/Split)."
+ratio_controls(bp::BottomPanel) = (bp.add_btn, bp.mode_menu)
 
 is_combined(bp::BottomPanel) = bp.mode_menu.selection[] == "Combined"
 
@@ -1322,7 +1431,9 @@ function rebuild_method!(bp::BottomPanel)
         isnothing(run) && return
         ich = bp.internal_menu.selection[]
         internal = ich isa AbstractString ? (ich, nothing) : (nothing, nothing)
-        bp.method_obs[] = KJ.Cmethod(run; internal=internal)
+        bp.method_obs[] = KJ.Cmethod(run;
+                                     internal=internal,
+                                     groups=bp.group_rm_assignments[])
     else
         P_ch, D_ch, d_ch = bp.p_channel[], bp.d_channel[], bp.sister_channel[]
         (isempty(P_ch) || isempty(D_ch) || isempty(d_ch)) && return
@@ -1363,9 +1474,14 @@ end
 "Show the internal-standard row in Cmethod mode, collapse it otherwise."
 function refresh_config_group!(panel)
     is_conc = panel.method_choice[] == CONCENTRATION_OPTION
-    rowsize!(panel.right_layout, 4, is_conc ? Fixed(36) : Fixed(0))
+    # The internal-standard picker moved into the Method popup, so the
+    # main-dashboard row stays collapsed regardless of method.
+    rowsize!(panel.right_layout, 4, Fixed(0))
     for b in conc_blocks(panel)
-        set_block_visible!(b, is_conc)
+        set_block_visible!(b, false)
+    end
+    for b in ratio_controls(panel)
+        set_block_visible!(b, !is_conc)
     end
     return
 end
@@ -1412,7 +1528,11 @@ function build_biplot_panel!(right::GridLayout, sample_obs::Observable,
               yautolimitmargin=(0.0, 0.05),
               yticklabelspace=42.0, xticklabelspace=18.0)
     Makie.deactivate_interaction!(ax, :rectanglezoom)
-    return (; ax,
+    # Spinner overlays the same cell — GridLayout allows co-tenancy, and
+    # the Spinner's `visible=false` collapses its plot to nothing when idle.
+    spinner = Makie.Spinner(plots[1, 1]; message = "Processing…",
+        fontsize = 24)
+    return (; ax, spinner,
         plot_ref            = Ref{Union{Nothing, Makie.AbstractPlot}}(nothing),
         concordia_line_ref  = Ref{Union{Nothing, Makie.AbstractPlot}}(nothing),
         concordia_notice_ref = Ref{Union{Nothing, Makie.AbstractPlot}}(nothing),
@@ -1843,7 +1963,7 @@ Group-picker popup: one button per RM (plus a "(sample)" reset). The
 where `ctx` is the target row index stored on `target_ctx` at open time.
 """
 struct GroupPicker
-    popup::Popup
+    modal::Modal
     sample_lbl::Label
     rm_buttons::Vector{Makie.Button}
     list_grid::GridLayout
@@ -1852,13 +1972,15 @@ struct GroupPicker
 end
 
 function build_group_picker_popup!(fig::Figure, owner::GroupState)
-    pop = Popup(fig; min_size=(280, 120), title="Assign group")
-    sample_lbl = Label(pop.layout[1, 1], "Sample: —";
+    # Height accommodates the concentration RM list (6 buttons) without
+    # clipping; Modal auto-grows further if the list gets longer.
+    modal = Modal(fig; min_size=(280, 300), title="Assign group")
+    sample_lbl = Label(modal.layout[1, 1], "Sample: —";
         halign=:left, fontsize=11, font=:bold, tellwidth=false)
-    rowsize!(pop.layout, 1, Fixed(28))
-    list_grid = pop.layout[2, 1] = GridLayout()
+    rowsize!(modal.layout, 1, Fixed(28))
+    list_grid = modal.layout[2, 1] = GridLayout()
 
-    picker = GroupPicker(pop, sample_lbl, Makie.Button[], list_grid,
+    picker = GroupPicker(modal, sample_lbl, Makie.Button[], list_grid,
         Base.RefValue{Union{Nothing,Int}}(nothing), owner)
     rebuild!(picker)
     on(_ -> rebuild!(picker), owner.method_choice)
@@ -1874,9 +1996,9 @@ function rebuild!(p::GroupPicker)
     for (i, opt) in enumerate(opts)
         btn = Button(p.list_grid[i, 1]; label=opt, width=220, height=26)
         on(btn.clicks) do _
-            isopen(p.popup) || return
+            isopen(p.modal) || return
             assign_group!(p.owner, opt, p.target_ctx[])
-            close!(p.popup)
+            close!(p.modal)
         end
         push!(p.rm_buttons, btn)
     end
@@ -1888,7 +2010,7 @@ function open_with_defaults!(p::GroupPicker, sname::AbstractString,
                              current_group::AbstractString, ctx::Integer)
     p.sample_lbl.text[] = "Sample: $sname    (current: $current_group)"
     p.target_ctx[] = Int(ctx)
-    open!(p.popup)
+    open!(p.modal)
 end
 
 """
@@ -1935,7 +2057,7 @@ References popup: one row per detected group with an RM dropdown
 apply directly to `assignments` / `roles`.
 """
 struct ReferencesPopup
-    popup::Popup
+    modal::Modal
     container::GridLayout
     rm_menus::Vector{Makie.Menu}
     role_menus::Vector{Makie.Menu}
@@ -1949,9 +2071,9 @@ end
 function build_references_popup!(fig::Figure,
     state::Observable, method_choice::Observable,
     assignments::Observable, roles::Observable)
-    pop = Popup(fig; size=(360, 360), title="References")
-    container = pop.layout[1, 1] = GridLayout()
-    popup = ReferencesPopup(pop, container,
+    modal = Modal(fig; title="References", min_size=(360, 200))
+    container = modal.layout[1, 1] = GridLayout()
+    popup = ReferencesPopup(modal, container,
         Makie.Menu[], Makie.Menu[], Makie.Label[],
         state, method_choice, assignments, roles)
     rebuild!(popup)
@@ -1996,7 +2118,8 @@ function rebuild!(p::ReferencesPopup)
             halign=:left, fontsize=10, tellwidth=true))
         current = get(p.assignments[], g, RM_NONE)
         idx = something(findfirst(==(current), opts), 1)
-        rm_menu = Menu(p.container[r, 2]; options=opts, default=idx, width=140)
+        rm_menu = Menu(p.container[r, 2]; options=opts, default=idx, width=140,
+                       searchable=true)
         role_default = get(ROLE_LABEL_OF, get(p.roles[], g, :standard),
                            ROLE_DEFAULT_LABEL)
         role_idx = something(findfirst(==(role_default), ROLE_LABELS), 1)
@@ -2021,7 +2144,7 @@ function rebuild!(p::ReferencesPopup)
     return
 end
 
-open_with_defaults!(p::ReferencesPopup) = (rebuild!(p); open!(p.popup); p)
+open_with_defaults!(p::ReferencesPopup) = (rebuild!(p); open!(p.modal); p)
 
 function navigate!(table, state::Observable, delta::Int)
     run = state[]
@@ -2032,6 +2155,26 @@ function navigate!(table, state::Observable, delta::Int)
     # Programmatic move: clear cell selection so the row highlight follows.
     table.i_selected_cell[] = (0, 0)
     return
+end
+
+function pick_folder()
+    path = Ref(Ptr{UInt8}())
+    r = @ccall Makie.NativeFileDialog_jll.libnfd.NFD_PickFolder(
+        C_NULL::Ptr{Cchar}, path::Ref{Ptr{UInt8}})::Cint
+    r == 1 ? unsafe_string(path[]) : nothing
+end
+
+function infer_format(dir::AbstractString, current::AbstractString)
+    isdir(dir) || return current
+    files = try
+        readdir(dir)
+    catch e
+        e isa Union{Base.IOError,SystemError} || rethrow()
+        return current
+    end
+    any(endswith(".FIN"), files) && return "FIN2"
+    # .csv can be either Agilent or ThermoFisher; keep the current pick.
+    return current
 end
 
 function load_path!(state::Observable, path::AbstractString,
@@ -2047,6 +2190,17 @@ function load_path!(state::Observable, path::AbstractString,
         return
     end
     state[] = run
+    return
+end
+
+function load_folder!(state::Observable, format_menu::Makie.Menu,
+                      pathbox_label::Makie.Label, picked::AbstractString,
+                      default_format::AbstractString)
+    fmt = infer_format(picked, something(format_menu.selection[], default_format))
+    fmt == format_menu.selection[] || (format_menu.i_selected[] =
+        something(findfirst(==(fmt), DATA_FORMATS), 1))
+    pathbox_label.text[] = basename(rstrip(picked, '/'))
+    load_path!(state, picked, String(fmt))
     return
 end
 

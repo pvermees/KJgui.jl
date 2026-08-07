@@ -48,6 +48,14 @@
 #        visible now that fit_obs is populated (A3)
 #   [ 9b] Biplot outlier — double-click a biplot point (A2 on biplot)
 #   [10] Zoom + next sample — final scrub through the run
+#   [C1] Concentration workflow — Method popup switches to Cmethod,
+#        the P/D/d rows collapse and an internal-standard picker takes
+#        their place inside the popup. Pick Al27→27, Apply.
+#   [C2] Tag NIST612p rows as the NIST612 RM group (picker rebuilds
+#        to the glass table on method switch).
+#   [C3] Process → Cfit; spinner animates during the fit.
+#   [C4] Switch back to Lu-Hf + re-Process so the closing shot is a
+#        fresh Gfit isochron.
 
 using Revise, KJgui, GLMakie, Makie
 
@@ -77,13 +85,13 @@ result.fig.scene.events.hasfocus[] = false
 # a `nothing` popup ref. Everything visible in the recording is driven
 # strictly by mouse/keyboard events below.
 notify(result.method_btn.clicks); sleep(0.2)
-close!(result.method_popup_ref[].popup)
+close!(result.method_popup_ref[].modal)
 KJgui.ensure_popup!(result.bot_panel)
-close!(result.bot_panel.popup_ref[].popup)
+close!(result.bot_panel.popup_ref[].modal)
 notify(result.channels_btn.clicks); sleep(0.2)
-close!(result.channels_popup_ref[].popup)
+close!(result.channels_popup_ref[].modal)
 notify(result.refs_btn.clicks); sleep(0.2)
-close!(result.refs_panel.popup)
+close!(result.refs_panel.modal)
 sleep(0.2)
 
 fig    = result.fig
@@ -173,11 +181,17 @@ function menu_option_pos(menu, idx::Integer)
     h  = option_strip_height(menu)
     n  = length(collect(menu.options[]))
     x  = bb.origin[1] + bb.widths[1] / 2
-    y  = if menu_dropdown_direction(menu) === :down
-        bb.origin[2] - (idx - 0.5) * h
-    else
-        (bb.origin[2] + bb.widths[2]) + n * h - (idx - 0.5) * h
-    end
+    # Mirror Makie's own direction heuristic (menu.jl:66-79). The viewport
+    # is `blockscene.viewport` — for a top-level menu that's the whole
+    # figure, for a Modal-hosted menu it's the Modal's content region.
+    # Compare bbox to viewport POSITION (not size) so both cases work.
+    vp = menu.blockscene.viewport[]
+    below = bb.origin[2] - vp.origin[2]
+    above = (vp.origin[2] + vp.widths[2]) - (bb.origin[2] + bb.widths[2])
+    list_h = n * h
+    down = below >= list_h || below > above
+    y = down ? bb.origin[2] - (idx - 0.5) * h :
+               (bb.origin[2] + bb.widths[2]) + (idx - 0.5) * h
     return Point2f(x, y)
 end
 function menu_select_events(menu, target_label; pre_wait = 0.25, post_wait = 0.4)
@@ -192,8 +206,11 @@ function menu_select_events(menu, target_label; pre_wait = 0.25, post_wait = 0.4
     ]
 end
 
-method_button(name) = first(b for b in method_pop.method_buttons
+current_pop() = result.method_popup_ref[]
+method_button(name) = first(b for b in current_pop().method_buttons
                                 if b.label[] == name)
+apply_btn() = current_pop().apply_btn
+internal_menu() = current_pop().internal_menu
 rm_button(name)     = first(b for b in picker.rm_buttons
                                 if b.label[] == name)
 
@@ -233,19 +250,6 @@ end
 # Targets for the LCS-expansion step.
 pul_rows = findall(s -> startswith(s.sname, "hogsbo_pul - "), result.state[])
 
-# Diagnostic: log each Hogsbo click + picker visibility change.
-let h = first(b for b in picker.rm_buttons if b.label[] == "Hogsbo")
-    on(h.clicks) do n
-        println("    [Hogsbo.clicks = $n]  popup open = $(isopen(picker.popup))  ",
-                "mp = $(result.fig.scene.events.mouseposition[])")
-    end
-    on(picker.popup.scene.parent.visible) do v
-        println("    [picker overlay.visible = $v]  ",
-                "title = $(picker.sample_lbl.text[])")
-    end
-end
-
-
 events = [
     Wait(0.8),
 
@@ -258,7 +262,7 @@ events = [
     MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.8),
     MouseTo(block_center(method_button("U-Pb"))),  LeftClick(), Wait(1.4),
     MouseTo(block_center(method_button("Lu-Hf"))), LeftClick(), Wait(1.4),
-    MouseTo(block_center(method_pop.apply_btn)),   LeftClick(), Wait(0.8),
+    MouseTo(block_center(apply_btn())),   LeftClick(), Wait(0.8),
 
     # [3] Group selection: tag first hogsbo_pul sample as "Hogsbo"
     MouseTo(group_cell_pos(table, pul_rows[1])), LeftClick(), Wait(0.8),
@@ -284,8 +288,8 @@ events = [
     # as a row with an RM dropdown. Open, linger so the cleaned-up
     # layout is visible, then close.
     MouseTo(block_center(result.refs_btn)), LeftClick(), Wait(1.2),
-    MouseTo(block_center(result.refs_panel.popup.close_btn)),
-    LeftClick(), Wait(0.6),
+    # Backdrop click dismisses the modal (dismiss_on_backdrop_click=true).
+    MouseTo(Point2f(80, 80)), LeftClick(), Wait(0.6),
 
     # [6] Add ratio plot (default P + S vs D)
     MouseTo(name_cell_pos(table, 1)), LeftClick(), Wait(0.5),
@@ -368,7 +372,7 @@ events = [
         MouseTo(block_center(on_cbs[target]))
     end),
     LeftClick(), Wait(0.8),
-    MouseTo(block_center(result.channels_popup_ref[].popup.close_btn)),
+    MouseTo(Point2f(80, 80)),
     LeftClick(), Wait(0.6),
 
     # [8e] Time-axis outlier: double-click on the count-rate plot. Places
@@ -414,6 +418,63 @@ events = [
     LeftClick(), Wait(0.7),
     MouseTo(block_center(prev_btn)), LeftClick(), Wait(0.7),
     LeftClick(), Wait(1.0),
+
+    # [C1] Concentration workflow. Open Method popup → click Concentration.
+    # The popup auto-rebuilds as Cmethod in place (P/D/d role rows are
+    # replaced by the internal-standard picker). Pick Al27→27, Apply.
+    MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(method_button("Concentration")))),
+    LeftClick(), Wait(1.2),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(internal_menu()))),
+    LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(menu_option_pos(internal_menu(),
+        findfirst(==("Al27 -> 27"), collect(internal_menu().options[]))))),
+    LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(apply_btn()))),
+    LeftClick(), Wait(1.2),
+
+    # [C2] Tag a NIST612p sample as the NIST612 concentration standard.
+    # The group picker's RM list rebuilt on the method switch and now
+    # offers glass names (NIST610/612/614/BHVO-2G/BCR-2g).
+    FakeInteraction.Lazy(_ -> begin
+        idx = findfirst(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, something(idx, 1)))
+    end),
+    LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(0.8),
+
+    # Sibling propagation: tag a second NIST612p row → LCS fill-in.
+    FakeInteraction.Lazy(_ -> begin
+        nist = findall(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, nist[2]))
+    end),
+    LeftClick(), Wait(0.6),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(1.0),
+
+    # [C3] Process → Cfit. Spinner animates during the fit, sidebar
+    # button flips to "Processing…" and back.
+    MouseTo(block_center(result.process_btn)), LeftClick(), Wait(3.0),
+
+    # [C4] Back to Lu-Hf and re-Process so the video ends on a fresh
+    # Gfit isochron (the Cfit from [C3] doesn't render on the isochron
+    # biplot). Clicking Lu-Hf in the Cmethod popup auto-swaps it back
+    # to a Gmethod popup; Apply commits the P/D/d defaults + closes.
+    MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(method_button("Lu-Hf")))),
+    LeftClick(), Wait(1.2),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(apply_btn()))),
+    LeftClick(), Wait(0.8),
+    MouseTo(block_center(result.process_btn)),     LeftClick(), Wait(3.0),
+
+    # Land on a standard row for the closing shot so the isochron
+    # + dashed fit lines on the ratio plot are both visible.
+    FakeInteraction.Lazy(_ -> begin
+        idx = findfirst(s -> startswith(s.sname, "hogsbo_pul"), result.state[])
+        MouseTo(name_cell_pos(table, something(idx, 1)))
+    end),
+    LeftClick(), Wait(1.5),
 ]
 
 video_path = joinpath(@__DIR__, "..", "..", "..", "demo.mp4")

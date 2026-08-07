@@ -38,6 +38,12 @@ without any extra wiring.
     channel_visible = Bool[]
     "Per-channel highlight = thicker line; empty means none (driven by the Key)"
     channel_highlight = Bool[]
+    "Fit linewidth for the prediction overlay."
+    fit_linewidth = 1.5
+    "Post-process fit (`nothing` = no overlay). Set from the dashboard's fit_obs."
+    fit = nothing
+    "Method used to derive `fit` (needed for `KJ.predict` on the signal window)."
+    method = nothing
     Makie.mixin_generic_plot_attributes()...
 end
 
@@ -77,29 +83,98 @@ function Makie.plot!(p::SamplePlot)
     vlines!(p, p.t0_value;
             color=p.t0_color, linestyle=p.t0_linestyle, linewidth=p.t0_linewidth)
 
-    # Thin red vlines at the time of every flagged outlier row, so the
-    # user can see which time-steps `KJ.process!` rejected (or which they
-    # manually flagged via the biplot double-click).
-    outlier_xs = lift(p.sample, p.times) do samp, t
-        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Float64[]
+    # Red xcross on every flagged (channel, time) pair — matches the biplot
+    # marker style and doesn't get confused with the fit-prediction line
+    # (which crosses the same axis).
+    outlier_pts = lift(p.sample, p.times, p.ymat, p.channel_visible) do samp, t, ymat, vis
+        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Point2f[]
         outliers = samp.dat.outlier
-        length(outliers) == length(t) || return Float64[]
-        out = Float64[]
-        for i in eachindex(outliers)
-            outliers[i] && push!(out, Float64(t[i]))
+        length(outliers) == length(t) || return Point2f[]
+        pts = Point2f[]
+        for ci in 1:size(ymat, 1)
+            (isempty(vis) || ci > length(vis) || vis[ci]) || continue
+            for i in eachindex(outliers)
+                outliers[i] || continue
+                y = ymat[ci, i]
+                (isnan(y) || iszero(y)) && continue
+                push!(pts, Point2f(t[i], y))
+            end
         end
-        return out
+        return pts
     end
-    vlines!(p, outlier_xs; color = (:red, 0.45), linewidth = 1.0,
-            inspectable = false)
+    scatter!(p, outlier_pts; color = :red, marker = :xcross, markersize = 10,
+             strokewidth = 0, inspectable = false)
 
-    # Pre-allocate `SAMPLE_MAX` line children — the loop runs once at
-    # recipe-build time but the data observables update reactively as the
-    # selected sample (and channel set) changes. Unused slots get empty
-    # data + empty label, so they don't render or pollute the Legend.
-    # Hidden channels (via `channel_visible`) also collapse to empty
-    # data so they don't inflate the axis autolimits.
+    # Fit-prediction overlay per channel (RMs only; `nothing` for `sample`
+    # rows). One `Point2f[]` per pre-allocated line slot: blank + signal
+    # windows concatenated with a NaN separator so a single line can span
+    # both windows without connecting them.
+    fit_lines = lift(p.sample, p.channel_names, p.fit, p.method) do samp, chans, fit, m
+        empty = [Point2f[] for _ in 1:SAMPLE_MAX]
+        (isnothing(samp) || isnothing(fit) || KJ.emptyFit(fit) ||
+         isnothing(m) || samp.group == "sample") && return empty
+        # Method-switch transient: `fit_obs` can briefly hold a fit whose
+        # type doesn't match the newly-selected method (e.g. Gfit + Cmethod
+        # after a Gmethod→Cmethod switch, until Process runs again). Skip
+        # the overlay rather than blow up in `KJ.predict`.
+        ((fit isa KJ.Gfit && m isa KJ.Gmethod) ||
+         (fit isa KJ.Cfit && m isa KJ.Cmethod)) || return empty
+        # `KJ.predict(samp, m, fit)` returns nothing for the "sample" group;
+        # its columns are exactly the P/D/d channels the fit uses.
+        pred_sig = KJ.predict(samp, m, fit; generic_names=false)
+        isnothing(pred_sig) && return empty
+        fit_chans = names(pred_sig)
+        pred_blank = KJ.predict(samp, fit.blank)
+        blk = KJ.bwinData(samp); sig = KJ.swinData(samp)
+        # Row alignment assumption for pred_blank/pred_sig ↔ blk/sig.
+        (isnothing(pred_blank) || size(pred_blank, 1) == size(blk, 1)) || return empty
+        size(pred_sig, 1) == size(sig, 1) || return empty
+        good_b = .!Vector{Bool}(blk.outlier)
+        good_s = .!Vector{Bool}(sig.outlier)
+        xb = Vector{Float64}(blk[good_b, 1])
+        xs = Vector{Float64}(sig[good_s, 1])
+        segments = copy(empty)
+        for (i, ch) in enumerate(chans)
+            i <= SAMPLE_MAX || break
+            ch in fit_chans || continue
+            pts = Point2f[]
+            if !isnothing(pred_blank) && ch in names(pred_blank)
+                append!(pts, Point2f.(xb, Vector{Float64}(pred_blank[good_b, ch])))
+                push!(pts, Point2f(NaN, NaN))
+            end
+            append!(pts, Point2f.(xs, Vector{Float64}(pred_sig[good_s, ch])))
+            segments[i] = pts
+        end
+        return segments
+    end
     cols = line_colors(p.line_colormap[], SAMPLE_MAX)
+    # Colour by rank among visible channels, not by absolute slot: keeps
+    # visible traces on the vivid front of :tab20 even when their slot
+    # indices are high (e.g. Lu-Hf's P/D/d land at 15/17/18).
+    visible_rank = lift(p.channel_visible) do vis
+        rank = zeros(Int, max(length(vis), SAMPLE_MAX))
+        r = 0
+        for i in eachindex(vis)
+            vis[i] || continue
+            r += 1
+            rank[i] = r
+        end
+        return rank
+    end
+    color_for(i) = lift(rk -> cols[mod1(iszero(rk[i]) ? i : rk[i], length(cols))],
+                        visible_rank)
+
+    # Fit lines are drawn before raw so the coloured signal sits on top;
+    # dashed to distinguish from raw while sharing the channel colour.
+    for i in 1:SAMPLE_MAX
+        pts = lift(v -> v[i], fit_lines)
+        lines!(p, pts; color = color_for(i), linewidth = p.fit_linewidth,
+               linestyle = :dash, label = "", inspectable = false)
+    end
+
+    # Pre-allocate `SAMPLE_MAX` raw-signal line children — updated
+    # reactively when the sample / channel set changes. Hidden channels
+    # collapse to empty data so they don't inflate autolimits.
     for i in 1:SAMPLE_MAX
         ydata = lift(p.times, p.ymat, p.channel_visible) do t, m, vis
             shown = isempty(vis) || i > length(vis) || vis[i]
@@ -107,7 +182,7 @@ function Makie.plot!(p::SamplePlot)
                 Point2f.(t, view(m, i, :)) : Point2f[]
         end
         lines!(p, ydata;
-               color     = cols[i],
+               color     = color_for(i),
                label     = lift(cn -> i <= length(cn) ? cn[i] : "", p.channel_names),
                linewidth = lift(p.channel_highlight, p.line_linewidth) do h, lw
                    (i <= length(h) && h[i]) ? 2.5lw : lw
@@ -130,6 +205,7 @@ function Makie.get_plots(p::SamplePlot)
     children = reduce(vcat, Makie.get_plots.(p.plots); init=Makie.AbstractPlot[])
     return filter(children) do c
         c isa Lines || return true
+        hasproperty(c, :label) || return false
         l = c.label[]
         l isa AbstractString && !isempty(l)
     end
@@ -268,8 +344,12 @@ function compute_fit_overlay(samp, nums::AbstractVector, den::AbstractString,
     end
 
     # Signal window prediction — only standards / RMs have it (the rest
-    # are "sample" group and `predict` returns nothing for them).
-    if !isnothing(method) && samp.group != "sample"
+    # are "sample" group and `predict` returns nothing for them). Also
+    # skip when `fit` and `method` are of incompatible types (method-
+    # switch transient before Process re-runs).
+    compat = (fit isa KJ.Gfit && method isa KJ.Gmethod) ||
+             (fit isa KJ.Cfit && method isa KJ.Cmethod)
+    if compat && samp.group != "sample"
         pred_sig = KJ.predict(samp, method, fit; generic_names=false)
         if !isnothing(pred_sig)
             chans_sig = intersect(String[nums_valid; valid_den], names(pred_sig))
@@ -300,18 +380,7 @@ function Makie.plot!(p::RatioPlot)
                [:times, :ymat, :ratio_labels, :offset]) do samp, nums, den
         isnothing(samp) && return (Float64[], Matrix{Float64}(undef, 0, 0),
                                    String[], 0.0)
-        t, m, labels, offset = compute_ratios(samp, nums, den)
-        # Break the line where the sample marks the row as an outlier so
-        # the trace doesn't spike through flagged points.
-        if !isempty(m) && hasproperty(samp.dat, :outlier)
-            mask = Vector{Bool}(samp.dat.outlier)
-            if length(mask) == size(m, 2)
-                for j in findall(mask), i in 1:size(m, 1)
-                    m[i, j] = NaN
-                end
-            end
-        end
-        return (t, m, labels, offset)
+        return compute_ratios(samp, nums, den)
     end
 
     Makie.map!(p.attributes, [:sample], [:blank_xmins, :blank_xmaxs]) do samp
@@ -333,20 +402,23 @@ function Makie.plot!(p::RatioPlot)
     vlines!(p, p.t0_value;
             color=p.t0_color, linestyle=p.t0_linestyle, linewidth=p.t0_linewidth)
 
-    # Mark every flagged outlier row with a thin red vline; the ratio
-    # line itself is already NaN'd at those rows (see `compute_ratios`).
-    outlier_xs = lift(p.sample, p.times) do samp, t
-        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Float64[]
+    # Red xcross on every flagged (numerator, time) pair — mirrors the
+    # SamplePlot/biplot outlier marker style.
+    outlier_pts = lift(p.sample, p.times, p.ymat) do samp, t, ymat
+        (isnothing(samp) || !hasproperty(samp.dat, :outlier)) && return Point2f[]
         outliers = samp.dat.outlier
-        length(outliers) == length(t) || return Float64[]
-        out = Float64[]
-        for i in eachindex(outliers)
-            outliers[i] && push!(out, Float64(t[i]))
+        length(outliers) == length(t) || return Point2f[]
+        pts = Point2f[]
+        for ri in 1:size(ymat, 1), i in eachindex(outliers)
+            outliers[i] || continue
+            y = ymat[ri, i]
+            isnan(y) && continue
+            push!(pts, Point2f(t[i], y))
         end
-        return out
+        return pts
     end
-    vlines!(p, outlier_xs; color = (:red, 0.45), linewidth = 1.0,
-            inspectable = false)
+    scatter!(p, outlier_pts; color = :red, marker = :xcross, markersize = 10,
+             strokewidth = 0, inspectable = false)
 
     # Pre-allocate `RATIO_MAX` line children so `numerators` can grow at
     # runtime without rebuilding. Unused slots get empty data + empty
@@ -375,16 +447,21 @@ function Makie.plot!(p::RatioPlot)
                    ) do samp, nums, den, offset, fit, method, labels
         compute_fit_overlay(samp, nums, den, offset, fit, method, labels)
     end
+    # Fit line: per-ratio colour (honouring `line_color` when Combined
+    # mode sets it) + dash so raw and fit stay visually paired.
     for i in 1:RATIO_MAX
         blank_pts  = lift(o -> o[1][i], overlay)
         signal_pts = lift(o -> o[2][i], overlay)
+        color_i = lift(c -> isnothing(c) ? cols[i] : c, p.line_color)
         lines!(p, blank_pts;
-               color     = p.fit_color,
+               color     = color_i,
                linewidth = p.fit_linewidth,
+               linestyle = :dash,
                label     = "")
         lines!(p, signal_pts;
-               color     = p.fit_color,
+               color     = color_i,
                linewidth = p.fit_linewidth,
+               linestyle = :dash,
                label     = "")
     end
     return p

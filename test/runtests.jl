@@ -61,12 +61,11 @@ const LUHF = joinpath(@__DIR__, "Lu-Hf")
     KJgui.navigate!(table, result.state, -10)
     @test table.i_selected[] in 1:length(result.state[])
 
-    # User-click path: Makie's Table writes `t.selection[]` (the documented
-    # output observable) on left-click but does NOT write back to
-    # `t.i_selected`. The dashboard bridges selection → i_selected, so a
-    # click-simulated `t.selection[]` write must navigate the plot.
+    # User-click path: Makie's Table writes `t.selection[]` on left-click and
+    # updates `t.i_selected` via the block's own compute graph. The dashboard
+    # bridges selection → i_selected so the plot navigates on synthesized clicks.
     tableplot = filter(p -> p isa Makie.Plot, table.blockscene.plots)[1]
-    Makie.update!(tableplot.attributes; i_selected=12, i_selected_cell=(12, 1))
+    Makie.update!(table.attributes; i_selected=12, i_selected_cell=(12, 1))
     table.selection[] = Makie.get_row_data(tableplot, 12)
     @test table.i_selected[] == 12
     @test result.sample_obs[].sname == result.state[][12].sname
@@ -163,18 +162,21 @@ end
     @test result.biplot_panel.ax.blockscene.visible[] == true
 
     # Switching to Concentration builds a Cmethod, hides the biplot, and
-    # surfaces the internal-standard picker.
+    # collapses the ratio-plot controls. The internal-standard picker
+    # lives inside the Method popup (opened via commit path in tests).
     result.method_choice[] = KJgui.CONCENTRATION_OPTION
     @test result.method[] isa KJ.Cmethod
     @test result.biplot_visible[] == true
     @test result.biplot_panel.ax.blockscene.visible[] == false
-    @test bp.internal_menu.blockscene.visible[] == true
+    @test bp.add_btn.blockscene.visible[] == false
+    @test bp.mode_menu.blockscene.visible[] == false
 
     # Switching back to a decay system restores geochronology mode.
     result.method_choice[] = "Lu-Hf"
     @test result.method[] isa KJ.Gmethod
     @test result.biplot_panel.ax.blockscene.visible[] == true
-    @test bp.internal_menu.blockscene.visible[] == false
+    @test bp.add_btn.blockscene.visible[] == true
+    @test bp.mode_menu.blockscene.visible[] == true
 end
 
 @testset "Concordia overlay toggles by plot-type menu + method" begin
@@ -261,20 +263,29 @@ end
         findfirst(==("ThermoFisher"), result.format_menu.options[])
     @test result.format_menu.selection[] == "ThermoFisher"
 
-    result.pathbox.stored_string[] = joinpath(@__DIR__, "..", "..", "KJ",
-                                              "test", "data", "iCap")
-    notify(result.load_btn.clicks)
+    # Drive the full load-button pipeline via `load_folder!`, which is
+    # what the click handler calls once `pick_folder()` returns a path.
+    # This covers format inference, format-menu sync, path-label update,
+    # and the KJ.load call.
+    icap = joinpath(@__DIR__, "..", "..", "KJ", "test", "data", "iCap")
+    KJgui.load_folder!(result.state, result.format_menu, result.pathbox_label,
+                       icap, "Agilent")
     sleep(0.1)
     @test length(result.state[]) > 0
     @test result.state[][1].sname == "610-1"   # ThermoFisher iCap test data
+    @test result.pathbox_label.text[] == basename(icap)
+    # iCap folder is `.csv`, so infer_format keeps the current pick — the
+    # test set ThermoFisher above.
+    @test result.format_menu.selection[] == "ThermoFisher"
 
-    # Switch back to Agilent + reload — picker selection survives a re-Read.
+    # Switch back to Agilent + reload — the picker+format survive a re-load.
     result.format_menu.i_selected[] =
         findfirst(==("Agilent"), result.format_menu.options[])
-    result.pathbox.stored_string[] = LUHF
-    notify(result.load_btn.clicks)
+    KJgui.load_folder!(result.state, result.format_menu, result.pathbox_label,
+                       LUHF, "Agilent")
     sleep(0.1)
     @test result.state[][1].sname == "BP - 01"
+    @test result.pathbox_label.text[] == basename(LUHF)
 end
 
 @testset "Method popup proxy override propagates through commit_method!" begin
@@ -597,6 +608,12 @@ end
     result.group_rm_assignments[] = Dict("hogsbo_pul" => "Hogsbo")
     @test !isempty(result.method[].groups)
     result.process_btn.clicks[] += 1
+    # `run_process!` spawns the heavy fit on a worker thread; poll for
+    # completion instead of racing the async task. First run compiles
+    # KJ.process!'s heavy code — give it up to 60s.
+    let deadline = time() + 60.0
+        while isnothing(result.fit[]) && time() < deadline; sleep(0.05); end
+    end
     @test result.fit[] isa KJ.Gfit
 
     # Biplot switches to processed mode: isochron line, uncertainty
