@@ -1193,6 +1193,10 @@ function build_bottom_panel!(right::GridLayout,
     on(method_choice) do sel
         sel === nothing && return
         bp.popup_committing[] && return
+        # Old fit references the old method's anchors (e.g. Hogsbo for
+        # Lu-Hf); leaving it around crashes `KJ.predict` under the new
+        # method.
+        bp.fit_obs[] = nothing
         samp = bp.sample_obs[]
         if sel != CONCENTRATION_OPTION && !isnothing(samp)
             chans = KJ.getChannels(samp)
@@ -1972,12 +1976,12 @@ struct GroupPicker
 end
 
 function build_group_picker_popup!(fig::Figure, owner::GroupState)
-    # Height accommodates the concentration RM list (6 buttons) without
-    # clipping; Modal auto-grows further if the list gets longer.
-    modal = Modal(fig; min_size=(280, 300), title="Assign group")
+    # Wide + tall enough for the longest RM list (Lu-Hf has 16) and for
+    # the "Sample: … (current: …)" label without truncation.
+    modal = Modal(fig; min_size=(340, 560), title="Assign group")
     sample_lbl = Label(modal.layout[1, 1], "Sample: —";
-        halign=:left, fontsize=11, font=:bold, tellwidth=false)
-    rowsize!(modal.layout, 1, Fixed(28))
+        halign=:left, fontsize=11, font=:bold, tellwidth=false, word_wrap=true)
+    rowsize!(modal.layout, 1, Fixed(40))
     list_grid = modal.layout[2, 1] = GridLayout()
 
     picker = GroupPicker(modal, sample_lbl, Makie.Button[], list_grid,
