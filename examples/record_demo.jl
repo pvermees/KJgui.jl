@@ -477,7 +477,8 @@ events = [
     LeftClick(), Wait(1.5),
 ]
 
-video_path = joinpath(@__DIR__, "..", "..", "..", "demo.mp4")
+video_path = get(ENV, "KJGUI_DEMO_PATH",
+                 joinpath(@__DIR__, "..", "..", "..", "demo.mp4"))
 FakeInteraction.interaction_record(fig, video_path, events;
                                    fps = 30, px_per_unit = 1)
 println("Saved: ", video_path)

@@ -1968,23 +1968,20 @@ where `ctx` is the target row index stored on `target_ctx` at open time.
 """
 struct GroupPicker
     modal::Modal
-    sample_lbl::Label
     rm_buttons::Vector{Makie.Button}
-    list_grid::GridLayout
     target_ctx::Base.RefValue{Union{Nothing,Int}}
     owner::GroupState
 end
 
 function build_group_picker_popup!(fig::Figure, owner::GroupState)
-    # Width fits the "Sample: … (current: …)" line on one row; height
-    # is set per-rebuild to the button count.
-    modal = Modal(fig; min_size=(420, 120), title="Assign group")
-    sample_lbl = Label(modal.layout[1, 1], "Sample: —";
-        halign=:left, fontsize=11, font=:bold, tellwidth=false)
-    rowsize!(modal.layout, 1, Fixed(28))
-    list_grid = modal.layout[2, 1] = GridLayout()
+    # The sample being assigned goes in the title: the header doesn't
+    # scroll, so it stays visible when a long RM list overflows the body.
+    # Auto height, capped so long RM lists (U-Pb has 27) scroll instead of
+    # running off the figure.
+    modal = Modal(fig; min_size=(360, 80), max_size=(360, PICKER_MAX_HEIGHT),
+                  title="Assign group")
 
-    picker = GroupPicker(modal, sample_lbl, Makie.Button[], list_grid,
+    picker = GroupPicker(modal, Makie.Button[],
         Base.RefValue{Union{Nothing,Int}}(nothing), owner)
     rebuild!(picker)
     on(_ -> rebuild!(picker), owner.method_choice)
@@ -1992,31 +1989,30 @@ function build_group_picker_popup!(fig::Figure, owner::GroupState)
 end
 
 function rebuild!(p::GroupPicker)
-    delete_all!(p.rm_buttons)
     opts = String["(sample)"]
     for rm in rm_options_for(p.owner.method_choice[])
         rm == RM_NONE || push!(opts, rm)
     end
-    for (i, opt) in enumerate(opts)
-        btn = Button(p.list_grid[i, 1]; label=opt, width=220, height=26)
-        on(btn.clicks) do _
-            isopen(p.modal) || return
-            assign_group!(p.owner, opt, p.target_ctx[])
-            close!(p.modal)
+    empty!(p.rm_buttons)
+    replace_content!(p.modal) do sf
+        for (i, opt) in enumerate(opts)
+            btn = Button(sf.layout[i, 1]; label=opt,
+                         width=RM_BUTTON_WIDTH, height=RM_BUTTON_HEIGHT)
+            on(btn.clicks) do _
+                isopen(p.modal) || return
+                assign_group!(p.owner, opt, p.target_ctx[])
+                close!(p.modal)
+            end
+            push!(p.rm_buttons, btn)
         end
-        push!(p.rm_buttons, btn)
+        rowgap!(sf.layout, RM_BUTTON_GAP)
     end
-    rowgap!(p.list_grid, 2)
-    # Auto-sizing doesn't drive Modal from nested sub-grid content in
-    # this Makie version, so size the body explicitly:
-    # header + label + n*button + padding.
-    p.modal.height = 40 + 28 + length(opts) * 30 + 40
     return
 end
 
 function open_with_defaults!(p::GroupPicker, sname::AbstractString,
                              current_group::AbstractString, ctx::Integer)
-    p.sample_lbl.text[] = "Sample: $sname    (current: $current_group)"
+    p.modal.title = "$sname  →  (now: $current_group)"
     p.target_ctx[] = Int(ctx)
     open!(p.modal)
 end
@@ -2232,6 +2228,12 @@ end
 
 "Sentinel value in RM dropdowns for an unassigned group."
 const RM_NONE = "(none)"
+
+const RM_BUTTON_HEIGHT = 26
+const RM_BUTTON_WIDTH = 200
+const RM_BUTTON_GAP = 2
+"Cap on the group picker's body; longer RM lists scroll."
+const PICKER_MAX_HEIGHT = 560
 
 """
 Reference materials known to KJ for the given method.

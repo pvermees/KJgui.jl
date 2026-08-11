@@ -171,12 +171,19 @@ end
     @test bp.add_btn.blockscene.visible[] == false
     @test bp.mode_menu.blockscene.visible[] == false
 
-    # Switching back to a decay system restores geochronology mode.
+    # Switching back to a decay system restores geochronology mode. The
+    # fit is dropped on any method switch (it references the old method's
+    # anchors), so the biplot axis stays hidden until Process runs again.
     result.method_choice[] = "Lu-Hf"
     @test result.method[] isa KJ.Gmethod
-    @test result.biplot_panel.ax.blockscene.visible[] == true
+    @test result.fit[] === nothing
+    @test result.biplot_panel.ax.blockscene.visible[] == false
     @test bp.add_btn.blockscene.visible[] == true
     @test bp.mode_menu.blockscene.visible[] == true
+
+    # ...and comes back once a fit exists again.
+    result.fit[] = KJ.Gfit(result.method[])
+    @test result.biplot_panel.ax.blockscene.visible[] == true
 end
 
 @testset "Concordia overlay toggles by plot-type menu + method" begin
