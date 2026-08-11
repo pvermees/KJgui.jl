@@ -1976,12 +1976,12 @@ struct GroupPicker
 end
 
 function build_group_picker_popup!(fig::Figure, owner::GroupState)
-    # Wide + tall enough for the longest RM list (Lu-Hf has 16) and for
-    # the "Sample: … (current: …)" label without truncation.
-    modal = Modal(fig; min_size=(340, 560), title="Assign group")
+    # Width fits the "Sample: … (current: …)" line on one row; height
+    # is set per-rebuild to the button count.
+    modal = Modal(fig; min_size=(420, 120), title="Assign group")
     sample_lbl = Label(modal.layout[1, 1], "Sample: —";
-        halign=:left, fontsize=11, font=:bold, tellwidth=false, word_wrap=true)
-    rowsize!(modal.layout, 1, Fixed(40))
+        halign=:left, fontsize=11, font=:bold, tellwidth=false)
+    rowsize!(modal.layout, 1, Fixed(28))
     list_grid = modal.layout[2, 1] = GridLayout()
 
     picker = GroupPicker(modal, sample_lbl, Makie.Button[], list_grid,
@@ -2007,6 +2007,10 @@ function rebuild!(p::GroupPicker)
         push!(p.rm_buttons, btn)
     end
     rowgap!(p.list_grid, 2)
+    # Auto-sizing doesn't drive Modal from nested sub-grid content in
+    # this Makie version, so size the body explicitly:
+    # header + label + n*button + padding.
+    p.modal.height = 40 + 28 + length(opts) * 30 + 40
     return
 end
 
