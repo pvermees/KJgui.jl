@@ -127,7 +127,7 @@ println("\n[1] Method selection — open Method popup and switch to U-Pb then ba
 # ===========================================================================
 
 click_block!(fig, result.method_btn; settle = 0.3)
-@assert isopen(result.method_popup_ref[].popup)
+@assert isopen(result.method_popup_ref[].modal)
 snap!("01_method_popup_open", fig)
 
 mpopup = result.method_popup_ref[]
@@ -162,15 +162,15 @@ pul_rows = findall(s -> startswith(s.sname, "hogsbo_pul - "), result.state[])
 @assert length(pul_rows) >= 2
 
 table.on_cell_click[](table, pul_rows[1], 4, nothing); sleep(0.3)
-@assert isopen(result.group_picker.popup)
+@assert isopen(result.group_picker.modal)
 snap!("04_group_picker_open", fig)
 
-rm_buttons() = result.group_picker.rm_buttons[]
+rm_buttons() = result.group_picker.rm_buttons
 hogsbo_btn() = first(b for b in rm_buttons() if b.label[] == "Hogsbo")
 click_block!(fig, hogsbo_btn(); settle = 0.4)
-@assert result.state[][pul_rows[1]].group == "Hogsbo"
+@assert result.state[][pul_rows[1]].group == "hogsbo_pul - "
 println("  state[$(pul_rows[1])].group = $(result.state[][pul_rows[1]].group)")
-n_hogsbo_after_first = count(s -> s.group == "Hogsbo", result.state[])
+n_hogsbo_after_first = count(s -> s.group == "hogsbo_pul - ", result.state[])
 @assert n_hogsbo_after_first == 1 "first pick = only the one sample"
 snap!("05_first_sample_tagged", fig)
 
@@ -182,7 +182,7 @@ println("    extends 'Hogsbo' to every sample sharing the longest common prefix"
 
 table.on_cell_click[](table, pul_rows[2], 4, nothing); sleep(0.3)
 click_block!(fig, hogsbo_btn(); settle = 0.4)
-n_hogsbo = count(s -> s.group == "Hogsbo", result.state[])
+n_hogsbo = count(s -> s.group == "hogsbo_pul - ", result.state[])
 println("  $n_hogsbo samples are now tagged 'Hogsbo' " *
         "(every `hogsbo_pul-N` got the prefix expansion).")
 @assert n_hogsbo == length(pul_rows) "LCS expansion should auto-tag every hogsbo_pul sibling"
@@ -197,15 +197,15 @@ table.i_selected[] = 1; sleep(0.2)
 p_ch, d_ch, s_ch = bp.p_channel[], bp.d_channel[], bp.sister_channel[]
 
 # Eagerly build the popup so its bboxes are valid before we click them.
-KJgui.ensure_popup!(bp); sleep(0.1); close!(bp.popup_ref[].popup); sleep(0.1)
+KJgui.ensure_popup!(bp); sleep(0.1); close!(bp.popup_ref[].modal); sleep(0.1)
 addr_pop = bp.popup_ref[]
 
 click_block!(fig, bp.add_btn; settle = 0.3)
-@assert isopen(addr_pop.popup)
+@assert isopen(addr_pop.modal)
 snap!("07_add_popup_open", fig)
 click_block!(fig, addr_pop.apply_btn; settle = 0.5)
-@assert length(bp.ratio_defs[]) == 1
-slot1 = first(bp.ratio_defs[])
+@assert length(bp.ratio_defs) == 1
+slot1 = first(bp.ratio_defs)
 @assert sort(slot1.numerators[]) == sort([p_ch, s_ch])
 @assert length(slot1.axes) == 1     # Combined → one shared axis
 @assert length(slot1.plots) == 2    # ...with both ratio traces
@@ -219,7 +219,7 @@ println("\n[5] Combined ↔ Split mode toggle")
 
 menu_select!(fig, bp.mode_menu, "Split")
 sleep(0.3)
-slot1 = first(bp.ratio_defs[])
+slot1 = first(bp.ratio_defs)
 @assert length(slot1.axes) == 2 "Split → 2 stacked axes inside the same slot"
 ax1, ax2 = slot1.axes
 @assert ax1.scene.viewport[].origin[1] == ax2.scene.viewport[].origin[1]
@@ -228,7 +228,7 @@ snap!("09_split", fig)
 
 menu_select!(fig, bp.mode_menu, "Combined")
 sleep(0.3)
-@assert length(first(bp.ratio_defs[]).axes) == 1
+@assert length(first(bp.ratio_defs).axes) == 1
 snap!("10_back_to_combined", fig)
 
 
@@ -269,8 +269,9 @@ snap!("12_outlier_flagged", fig)
 println("\n[8] Process — runs KJ.process! and overlays the fit")
 # ===========================================================================
 
-# Need an RM reference; group_picker already mapped 'Hogsbo' → Hogsbo RM.
-result.group_rm_assignments[] = Dict("Hogsbo" => "Hogsbo")
+# The picker already mapped the `hogsbo_pul - ` group to the Hogsbo RM; the
+# group is named for the sample prefix, the RM is the value.
+@assert result.group_rm_assignments[] == Dict("hogsbo_pul - " => "Hogsbo")
 click_block!(fig, result.process_btn; settle = 2.0)
 @assert result.fit[] isa Gfit
 println("  fit produced: $(typeof(result.fit[]))")
@@ -293,7 +294,7 @@ function has_black_overlay(plot_h)
     end
     return false
 end
-@assert any(has_black_overlay(p) for s in bp.ratio_defs[] for p in s.plots)
+@assert any(has_black_overlay(p) for s in bp.ratio_defs for p in s.plots)
 snap!("13_processed_fit_overlay", fig)
 
 

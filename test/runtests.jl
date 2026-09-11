@@ -164,12 +164,25 @@ end
     # Switching to Concentration builds a Cmethod, hides the biplot, and
     # collapses the ratio-plot controls. The internal-standard picker
     # lives inside the Method popup (opened via commit path in tests).
+    # Add a ratio plot first: collapsing the row to zero height is not enough,
+    # because the axis keeps drawing its ylabel/ticks/legend against a
+    # one-pixel bbox and they land on the count-rate plot underneath.
+    KJgui.ensure_popup!(bp)
+    bp.add_btn.clicks[] += 1
+    bp.popup_ref[].apply_btn.clicks[] += 1
+    @test length(bp.ratio_defs) == 1
+    ratio_axes() = [ax for s in bp.ratio_defs for ax in s.axes]
+    @test all(ax -> ax.blockscene.visible[], ratio_axes())
+
     result.method_choice[] = KJgui.CONCENTRATION_OPTION
     @test result.method[] isa KJ.Cmethod
     @test result.biplot_visible[] == true
     @test result.biplot_panel.ax.blockscene.visible[] == false
     @test bp.add_btn.blockscene.visible[] == false
     @test bp.mode_menu.blockscene.visible[] == false
+    @test !any(ax -> ax.blockscene.visible[], ratio_axes())
+    @test !any(lg -> lg.blockscene.visible[],
+               [lg for s in bp.ratio_defs for lg in s.legends])
 
     # Switching back to a decay system restores geochronology mode. The
     # fit is dropped on any method switch (it references the old method's
@@ -180,6 +193,7 @@ end
     @test result.biplot_panel.ax.blockscene.visible[] == false
     @test bp.add_btn.blockscene.visible[] == true
     @test bp.mode_menu.blockscene.visible[] == true
+    @test all(ax -> ax.blockscene.visible[], ratio_axes())   # restored
 
     # ...and comes back once a fit exists again.
     result.fit[] = KJ.Gfit(result.method[])
@@ -514,8 +528,8 @@ end
     bp_btn = first(b for b in result.group_picker.rm_buttons
                      if b.label[] == "BP")
     notify(bp_btn.clicks)
-    @test count(s -> s.group == "BP", run) == 1
-    @test run[bp1_idx].group == "BP"
+    @test count(s -> s.group == "BP - ", run) == 1
+    @test run[bp1_idx].group == "BP - "
 
     # Second pick to the SAME RM triggers LCS auto-expansion: every BP - NN
     # sample now joins the group.
@@ -523,9 +537,10 @@ end
                                             run[bp2_idx].group, bp2_idx)
     notify(bp_btn.clicks)
     n_bp_samples = count(s -> startswith(s.sname, "BP - "), run)
-    @test count(s -> s.group == "BP", run) == n_bp_samples
-    @test result.group_rm_assignments[] == Dict("BP" => "BP")
-    @test result.method[].groups == Dict("BP" => "BP")
+    @test count(s -> s.group == "BP - ", run) == n_bp_samples
+    # The group is named for the prefix; "BP" is the reference material it maps to.
+    @test result.group_rm_assignments[] == Dict("BP - " => "BP")
+    @test result.method[].groups == Dict("BP - " => "BP")
 
     # Reset by picking "(sample)" — BULK-clears every sample sharing the
     # clicked row's current group. Mirrors the LCS bulk-assign so the
@@ -535,7 +550,7 @@ end
     sample_reset_btn = first(b for b in result.group_picker.rm_buttons
                                  if b.label[] == "(sample)")
     notify(sample_reset_btn.clicks)
-    @test count(s -> s.group == "BP", run) == 0
+    @test count(s -> s.group == "BP - ", run) == 0
     @test run[bp1_idx].group == "sample"
     @test run[bp2_idx].group == "sample"
 
@@ -545,12 +560,12 @@ end
     KJgui.open_with_defaults!(result.group_picker, run[bp1_idx].sname,
                                             run[bp1_idx].group, bp1_idx)
     notify(bp_btn.clicks)
-    @test count(s -> s.group == "BP", run) == 1
+    @test count(s -> s.group == "BP - ", run) == 1
     # Second pick — full expansion fires again on a fresh group.
     KJgui.open_with_defaults!(result.group_picker, run[bp2_idx].sname,
                                             run[bp2_idx].group, bp2_idx)
     notify(bp_btn.clicks)
-    @test count(s -> s.group == "BP", run) ==
+    @test count(s -> s.group == "BP - ", run) ==
           count(s -> startswith(s.sname, "BP - "), run)
 
     # Now drive the full Lu-Hf assignment dict directly (skipping the picker)
@@ -574,7 +589,7 @@ end
     @test m.groups == Dict("BP" => "BP",
                            "NIST612p" => "NIST612",
                            "hogsbo_pul" => "Hogsbo")
-    @test m.standards == Set(["BP", "NIST612p", "hogsbo_pul"])
+    @test m.standards == Set(["BP", "hogsbo_pul"])   # NIST612p is glass-backed → :none
 
     # Switching a role to :massbias moves the group out of `standards` and
     # into `bias.standards` (via KJ.Calibration!).
@@ -637,4 +652,231 @@ end
     @test length(bp.ribbon_lo[]) == 50
     @test length(bp.ribbon_hi[]) == 50
     @test all(bp.ribbon_lo[] .<= bp.ribbon_hi[])
+
+    # A fit belongs to the method it was started from. Switching method
+    # mid-fit clears `fit_obs`; the in-flight result must not land afterwards
+    # and re-populate it with a fit the new method knows nothing about.
+    result.process_btn.clicks[] += 1
+    result.method_choice[] = "U-Pb"
+    @test result.fit[] === nothing
+    let deadline = time() + 60.0
+        while time() < deadline && !isnothing(result.fit[]); sleep(0.05); end
+        # give the worker time to finish and the tick handler to run
+        sleep(3.0)
+    end
+    @test result.method[] isa KJ.Gmethod
+    @test result.fit[] === nothing
+end
+
+@testset "Interference corrections mirror KJ's TUI flow" begin
+    GLMakie.activate!(visible = false)
+    result = KJgui.run_gui(path = LUHF)
+    bp = result.bot_panel
+    chans = bp.channels_obs[]
+
+    # --- science layer: reproduces the configurations KJ's own tests use.
+    # KJ's runtests.jl pairs the Lu176 interference on Hf176 with "Lu175 -> 257",
+    # not the on-mass "Lu175 -> 175": the target is measured at a +82 mass shift.
+    @test KJgui.default_proxy_channel("Lu176", "Hf176 -> 258", chans) == "Lu175 -> 257"
+
+    spec = KJgui.InterferenceSpec("Lu176"; channel = "Lu175 -> 257")
+    @test spec.proxy == "Lu175"                     # derived via channel2proxy
+    @test KJgui.interference_key(spec) == "Lu176"
+    built = KJgui.interference(spec)
+    @test built isa KJ.Interference
+    @test (built.proxy, built.channel) == ("Lu175", "Lu175 -> 257")
+
+    # Re-Os poly: the proxy is derived from a mass-shifted channel too.
+    @test KJgui.InterferenceSpec("Re187"; channel = "Re185 -> 249").proxy == "Re185"
+
+    # Mono corrections are keyed by the interfering channel, per KJ.
+    mono = KJgui.MonoInterferenceSpec(channel = "Tm169 -> 185", metal = "Lu175 -> 191",
+                                      oxide = "Ir191 -> 191", standards = ["Nist_REEint"])
+    @test KJgui.interference_key(mono) == "Tm169 -> 185"
+    bm = KJgui.interference(mono)
+    @test bm isa KJ.MonoInterference
+    @test (bm.metal, bm.oxide) == ("Lu175 -> 191", "Ir191 -> 191")
+    @test bm.standards == Set(["Nist_REEint"])
+
+    # When channel2proxy cannot map the channel — KJ's `setInterferenceProxy`
+    # state — the proxy is left blank and the isotopes of the element are offered.
+    fallback = KJgui.InterferenceSpec("Lu176"; channel = "channel 7")
+    @test isempty(fallback.proxy)
+    @test KJgui.proxy_candidates("Lu176") == ["Lu175", "Lu176"]
+
+    # --- the ratio cross-check catches the bad Lu row in KJ's settings/iratio.csv,
+    # which holds a copy of the Re value. The Re row itself is correct.
+    # Guard the constant table itself: it is parsed out of KJ's template, so a
+    # format change would otherwise silently empty it and turn every
+    # cross-check into a no-op `:unchecked`.
+    @test length(KJgui.REFERENCE_IRATIOS) >= 40
+    @test KJgui.REFERENCE_IRATIOS["Lu176Lu175"] == 0.02668
+    @test KJgui.REFERENCE_IRATIOS["Re185Re187"] == 0.59738
+    @test KJgui.REFERENCE_IRATIOS["U238U235"] == 137.818
+    # Single-nuclide sections (`lambda`, `imass`) must not leak in as keys.
+    @test !haskey(KJgui.REFERENCE_IRATIOS, "Re187")
+    @test !haskey(KJgui.REFERENCE_IRATIOS, "U238")
+    @test KJgui.reference_ratio("Lu175", "Lu176") == 1 / 0.02668   # reciprocal
+
+    status, applied, reference = KJgui.ratio_check("Lu176", "Lu175")
+    @test status === :mismatch
+    @test applied / reference > 60
+    @test KJgui.ratio_check("Re187", "Re185")[1] === :ok
+
+    # --- panel: only D has an interferable mass in this run
+    result.interference_btn.clicks[] += 1
+    popup = result.interference_popup_ref[]
+    @test !isnothing(popup)
+    @test isopen(popup.modal)
+    @test sort(collect(keys(popup.add_menus))) == [:D]
+    @test Set(collect(popup.add_menus[:D].options[])) == Set(["Yb176", "Lu176"])
+
+    # Adding it through the menu defaults the channel and reaches the method.
+    popup.add_menus[:D].selection[] = "Lu176"
+    @test KJgui.specs_for(bp, :D) == [KJgui.InterferenceSpec("Lu176", "Lu175", "Lu175 -> 257")]
+    @test result.method[].D.interferences["Lu176"].channel == "Lu175 -> 257"
+
+    # Choosing another channel re-derives the proxy, as KJ does on every choice.
+    popup.row_menus[(:D, 1, :channel)].selection[] = "Lu175 -> 175"
+    @test KJgui.specs_for(bp, :D)[1].channel == "Lu175 -> 175"
+    @test KJgui.specs_for(bp, :D)[1].proxy == "Lu175"
+    # ...and the mismatched mass shift is reported rather than silently applied.
+    @test occursin("mass shift",
+                   KJgui.interference_problem(KJgui.specs_for(bp, :D)[1],
+                                              "Hf176 -> 258", chans))
+
+    # A half-configured mono row stays in panel state but out of the method,
+    # so it cannot key a blank entry into `Pairing.interferences`.
+    popup.mono_buttons[:P].clicks[] += 1
+    @test length(KJgui.specs_for(bp, :P)) == 1
+    @test isempty(result.method[].P.interferences)
+
+    popup.row_buttons[(:P, 1)].clicks[] += 1
+    @test isempty(KJgui.specs_for(bp, :P))
+
+    popup.row_buttons[(:D, 1)].clicks[] += 1
+    @test isempty(KJgui.specs_for(bp, :D))
+    @test isempty(result.method[].D.interferences)
+
+    # A spec is only applied when every channel it names is in the run. A
+    # channel that disappears with a reload leaves the row visible and
+    # explained, but out of the method rather than handed to `process!`.
+    stale = KJgui.InterferenceSpec("Lu176"; channel = "Lu175 -> 257")
+    @test KJgui.is_applicable(stale, chans)
+    @test !KJgui.is_applicable(stale, ["Aa1 -> 1"])
+    @test occursin("not a channel in this run",
+                   KJgui.interference_problem(stale, "Hf176 -> 258", ["Aa1 -> 1"]))
+    popup.add_menus[:D].selection[] = "Lu176"
+    @test !isempty(result.method[].D.interferences)
+    bp.channels_obs[] = ["Aa1 -> 1", "Bb2 -> 2"]
+    @test KJgui.specs_for(bp, :D) == [stale]        # kept, so it can be fixed
+    @test isempty(result.method[].D.interferences)  # but never applied
+
+    # Mono needs its three channels present too, not just non-empty.
+    m3 = KJgui.MonoInterferenceSpec(channel = "Aa1 -> 1", metal = "Bb2 -> 2",
+                                    oxide = "Aa1 -> 1", standards = ["g"])
+    @test KJgui.is_applicable(m3, ["Aa1 -> 1", "Bb2 -> 2"])
+    @test !KJgui.is_applicable(m3, ["Aa1 -> 1"])
+end
+
+@testset "Groups are identified by prefix, not by reference material" begin
+    GLMakie.activate!(visible = false)
+    result = KJgui.run_gui(path = LUHF)
+    run = result.state[]
+    gs = result.group_picker.owner
+
+    @test KJgui.group_prefix("BP - 01") == "BP - "
+    @test KJgui.group_prefix("Qmoly") == "Qmoly"     # nothing to strip
+
+    # Reference glasses belong in every decay system's picker: they are the
+    # interference and mass-bias standards. Re-Os's refmat table lists only
+    # NiS-3 and QMolyHill, so without this the Re-Os workflow is unbuildable.
+    opts = KJgui.rm_options_for("Re-Os")
+    @test "QMolyHill" in opts
+    @test "NIST610" in opts
+    @test KJgui.is_reference_glass("NIST610")
+    @test !KJgui.is_reference_glass("QMolyHill")
+    # NIST612 is in BOTH tables — a Lu-Hf reference material and a glass — so
+    # the name-based test calls it a glass and its group defaults to `:none`.
+    @test "NIST612" in KJ._KJ["refmat"]["Lu-Hf"].names
+    @test KJgui.is_reference_glass("NIST612")
+
+    # Two distinct groups may map to one RM — the Re-Os configuration needs
+    # Nist_massbias and Nist_REEint both assigned to NIST610.
+    bp = findfirst(s -> s.sname == "BP - 01", run)
+    hog = findfirst(s -> s.sname == "hogsbo_pul - 01", run)
+    KJgui.assign_group!(gs, "NIST610", bp)
+    KJgui.assign_group!(gs, "NIST610", hog)
+    @test run[bp].group == "BP - "
+    @test run[hog].group == "hogsbo_pul - "
+    @test result.group_rm_assignments[] ==
+          Dict("BP - " => "NIST610", "hogsbo_pul - " => "NIST610")
+    @test result.method[].groups ==
+          Dict("BP - " => "NIST610", "hogsbo_pul - " => "NIST610")
+
+    # Glass-backed groups stay out of the fractionation fit until given a role.
+    @test isempty(result.method[].standards)
+    result.group_roles[] = Dict("BP - " => :standard)
+    @test result.method[].standards == Set(["BP - "])
+end
+
+@testset "Concentration groups stay named for the glass" begin
+    GLMakie.activate!(visible = false)
+    result = KJgui.run_gui(path = LUHF)
+    result.method_choice[] = KJgui.CONCENTRATION_OPTION
+    run = result.state[]
+    gs = result.group_picker.owner
+
+    # `KJ.predict` resolves a concentration sample's group through
+    # `_KJ["glass"]` (via `elements2concs`), so the group must BE the glass
+    # name — prefix naming would break the calibration.
+    @test KJgui.group_label(KJgui.CONCENTRATION_OPTION, "GLASS - 01", "NIST612") ==
+          "NIST612"
+    @test KJgui.group_label("Lu-Hf", "GLASS - 01", "NIST612") == "GLASS - "
+
+    bp1 = findfirst(s -> s.sname == "BP - 01", run)
+    bp2 = findfirst(s -> s.sname == "BP - 02", run)
+    KJgui.assign_group!(gs, "NIST612", bp1)
+    @test run[bp1].group == "NIST612"
+    # Second pick still expands by sample-name prefix, not by the glass name.
+    KJgui.assign_group!(gs, "NIST612", bp2)
+    @test count(s -> s.group == "NIST612", run) ==
+          count(s -> startswith(s.sname, "BP - "), run)
+    @test result.group_rm_assignments[] == Dict("NIST612" => "NIST612")
+end
+
+@testset "Process covers the pointer while fitting" begin
+    GLMakie.activate!(visible = false)
+    result = KJgui.run_gui(path = LUHF)
+    fig = result.fig
+    # Over the sidebar buttons, which are what must stop responding.
+    mp = Point2f(100, 500)
+
+    @test result.fitting[] == false
+    @test isnothing(Makie.find_topmost_cover(fig.scene, mp))
+
+    # `KJ.process!` mutates the run on a worker thread while the render task
+    # reads it, so the dashboard stops taking input for the duration.
+    result.fitting[] = true
+    cover = Makie.find_topmost_cover(fig.scene, mp)
+    @test !isnothing(cover)
+    @test cover.captures_mouse
+    @test Makie.covers_pointer(cover)
+
+    result.fitting[] = false
+    @test isnothing(Makie.find_topmost_cover(fig.scene, mp))
+
+    # End to end: a real Process arms and disarms it.
+    run = result.state[]
+    for s in run
+        startswith(s.sname, "hogsbo_pul - ") && (s.group = "hogsbo_pul")
+    end
+    result.group_rm_assignments[] = Dict("hogsbo_pul" => "Hogsbo")
+    result.process_btn.clicks[] += 1
+    @test result.fitting[] == true
+    let deadline = time() + 60.0
+        while isnothing(result.fit[]) && time() < deadline; sleep(0.05); end
+    end
+    @test result.fit[] isa KJ.Gfit
+    @test result.fitting[] == false
 end

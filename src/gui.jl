@@ -35,7 +35,7 @@ function run_gui(; path::Union{Nothing,AbstractString}=nothing,
 end
 
 const STUB_BUTTONS = [
-    "Interferences", "Fractionation", "Mass bias",
+    "Fractionation", "Mass bias",
     "Process data", "Export results", "Logs / templates",
     "Options", "Clear", "Exit",
 ]
@@ -92,15 +92,20 @@ function build_dashboard!(fig::Figure,
     channels_btn = Button(left[6, 1]; label="Channels", width=160)
     channels_popup_ref = Base.RefValue{Union{Nothing,ChannelsPopup}}(nothing)
 
+    interference_btn = Button(left[7, 1]; label="Interferences", width=160)
+    interference_popup_ref = Base.RefValue{Union{Nothing,InterferencePopup}}(nothing)
+
+    # Armed only while a fit is in flight; see `build_processing_modal!`.
+    fitting = build_processing_modal!(fig)
+
     process_btn = nothing
     for (i, lbl) in enumerate(STUB_BUTTONS)
-        b = Button(left[6+i, 1]; label=lbl, width=160)
+        b = Button(left[7+i, 1]; label=lbl, width=160)
         if lbl == "Process data"
             process_btn = b
             on(b.clicks) do _
                 run_process!(state, method, fit_obs;
-                    process_btn=process_btn, spinner=biplot_panel.spinner,
-                    fig=fig)
+                    process_btn=process_btn, busy=fitting, fig=fig)
             end
         else
             on(b.clicks) do _
@@ -204,6 +209,15 @@ function build_dashboard!(fig::Figure,
         isnothing(cp) || open!(cp.modal)
     end
 
+    function ensure_interference_popup!()
+        isnothing(interference_popup_ref[]) || return interference_popup_ref[]
+        interference_popup_ref[] = build_interference_popup!(fig, bot_panel)
+        return interference_popup_ref[]
+    end
+    on(interference_btn.clicks) do _
+        open_with_defaults!(ensure_interference_popup!())
+    end
+
     group_state = GroupState(state, method_choice, group_rm_assignments)
     group_picker = build_group_picker_popup!(fig, group_state)
     # Column 4 = `:group` (see `build_sample_table!`'s `column_names`).
@@ -215,15 +229,12 @@ function build_dashboard!(fig::Figure,
         open_with_defaults!(group_picker, samp.sname, samp.group, row)
     end
 
-    # Section is visible whenever a fit exists or the spinner is busy
-    # (the spinner needs a pane to render into). The axis only shows on
-    # fit; while busy, only the spinner is in the cell.
-    busy = biplot_panel.spinner.running
-    onany(biplot_visible, method, fit_obs, busy; update=true) do vis, m, fit, b
-        section_show = vis && !(m isa KJ.Cmethod) && (!isnothing(fit) || b)
-        axis_show    = vis && !(m isa KJ.Cmethod) && !isnothing(fit) && !b
-        rowsize!(right, 6, section_show ? Auto() : Fixed(0))
-        set_block_visible!(biplot_panel.ax, axis_show)
+    # Progress lives in the processing modal, so the section is simply tied
+    # to whether a fit exists.
+    onany(biplot_visible, method, fit_obs; update=true) do vis, m, fit
+        show = vis && !(m isa KJ.Cmethod) && !isnothing(fit)
+        rowsize!(right, 6, show ? Auto() : Fixed(0))
+        set_block_visible!(biplot_panel.ax, show)
     end
 
     # Hide the biplot controls (plot type + on/off) for Cmethod, which has
@@ -279,7 +290,40 @@ function build_dashboard!(fig::Figure,
               group_rm_assignments, group_roles, process_btn,
               load_btn, format_menu, pathbox_label,
               channels_btn, channels_popup_ref,
+              interference_btn, interference_popup_ref, fitting,
               plot_type_menu, biplot_cb)
+end
+
+"""
+Modal shown while a fit runs; returns the observable that arms it.
+
+`KJ.process!` mutates the run it is handed — `setGroup!` writes `samp.group`
+and `detect_outliers!` writes `samp.dat.outlier` — on a worker thread, while
+the render task reads exactly those to draw the table and the outlier
+markers. Rather than racing, the dashboard stops taking input for the
+duration. `Modal`'s backdrop is already a pointer cover, so nothing
+underneath receives clicks, and the spinner sits *above* the backdrop
+instead of being dimmed along with everything it is meant to explain.
+
+No header: there is nothing to close here, and a zero-height header also
+collapses the close ×'s hit rect, so a running fit cannot be unblocked by
+clicking it.
+"""
+function build_processing_modal!(fig::Figure)
+    running = Observable(false)
+    modal = Modal(fig; header_height = 0, contentpadding = 18,
+                  min_size = (230, 76), max_size = (230, 76),
+                  dismiss_on_backdrop_click = false)
+    spinner = nothing
+    replace_content!(modal) do sf
+        spinner = Makie.Spinner(sf.layout[1, 1];
+                                message = "Processing…", fontsize = 16)
+    end
+    on(running) do r
+        spinner.running = r
+        r ? open!(modal) : close!(modal)
+    end
+    return running
 end
 
 """
@@ -294,6 +338,7 @@ falls back to the main task and the spinner will freeze.
 function run_process!(state::Observable, method::Observable, fit_obs::Observable;
                       process_btn::Union{Nothing,Makie.Button}=nothing,
                       spinner::Union{Nothing,Makie.Spinner}=nothing,
+                      busy::Union{Nothing,Observable{Bool}}=nothing,
                       fig::Union{Nothing,Figure}=nothing)
     run = state[]
     m = method[]
@@ -309,9 +354,10 @@ function run_process!(state::Observable, method::Observable, fit_obs::Observable
         @warn "Process: assign at least one Reference Material in the References panel"
         return
     end
-    # Reject re-entry while a fit is in flight — `spinner.running` stays
-    # true from start until the tick handler finalises.
-    if !isnothing(spinner) && spinner.running[]
+    # Reject re-entry while a fit is in flight — `busy` (or the spinner, when
+    # one is passed instead) stays true from start until the tick handler
+    # finalises.
+    if (!isnothing(busy) && busy[]) || (!isnothing(spinner) && spinner.running[])
         @warn "Process: a fit is already running"
         return
     end
@@ -324,6 +370,7 @@ function run_process!(state::Observable, method::Observable, fit_obs::Observable
         process_btn.buttoncolor[] = RGBf(0.85, 0.90, 1.00)
     end
     finalize! = () -> begin
+        isnothing(busy) || (busy[] = false)
         isnothing(spinner) || (spinner.running = false)
         if !isnothing(process_btn)
             process_btn.label[] = something(original_label, "Process data")
@@ -332,6 +379,7 @@ function run_process!(state::Observable, method::Observable, fit_obs::Observable
         end
     end
     isnothing(spinner) || (spinner.running = true)
+    isnothing(busy) || (busy[] = true)
 
     if isnothing(fig)
         # Sync fallback (tests, headless without a render loop). Spinner
@@ -361,7 +409,16 @@ function run_process!(state::Observable, method::Observable, fit_obs::Observable
         payload = take!(chan)
         off(listener[])
         if payload[1] === :ok
-            fit_obs[] = payload[2]
+            # The fit belongs to the method it was started from. Switching
+            # method mid-fit already clears `fit_obs`, but this result would
+            # otherwise land afterwards and re-populate it with a fit the new
+            # method knows nothing about. `rebuild_method!` builds a fresh
+            # object on every edit, so identity is the test.
+            if method[] === m
+                fit_obs[] = payload[2]
+            else
+                @warn "Process: method changed while fitting, discarding the result"
+            end
         else
             @warn "Process failed" exception=(payload[2], payload[3])
         end
@@ -609,13 +666,18 @@ function build_method(method_name::AbstractString,
     d_proxy::AbstractString="",
     s_proxy::AbstractString="",
     groups::AbstractDict=Dict{String,String}(),
-    roles::AbstractDict=Dict{String,Symbol}())
+    roles::AbstractDict=Dict{String,Symbol}(),
+    interferences::AbstractDict=Dict{Symbol,Vector{AbstractInterferenceSpec}}(),
+    # Every channel the run has, as opposed to the three role channels above.
+    # Interference specs are checked against it and skipped when they name a
+    # channel this run does not have; with none given, none are applied.
+    run_channels::AbstractVector=String[])
     ions = default_ions(method_name)
     # Manual override > `KJ.channel2proxy` inference > role's default ion.
     pair(ion, ch, manual) = KJ.Pairing(ion=ion,
         proxy=isempty(manual) ? something(KJ.channel2proxy(ch), ion) : manual,
         channel=ch)
-    role_of(g) = get(roles, g, :standard)
+    role_of(g) = get(roles, g, default_group_role(get(groups, g, "")))
     fractionation = Set{String}(g for g in keys(groups) if role_of(g) == :standard)
     mass_bias     = Set{String}(g for g in keys(groups) if role_of(g) == :massbias)
     method = KJ.Gmethod(name=method_name,
@@ -624,6 +686,11 @@ function build_method(method_name::AbstractString,
         P=pair(ions.P, p_channel,      p_proxy),
         D=pair(ions.D, d_channel,      d_proxy),
         d=pair(ions.d, sister_channel, s_proxy))
+    for role in INTERFERENCE_ROLES
+        apply_interferences!(role_pairing(method, role),
+                             get(interferences, role, AbstractInterferenceSpec[]),
+                             run_channels)
+    end
     if !isempty(mass_bias)
         try
             KJ.Calibration!(method; standards=mass_bias)
@@ -1161,12 +1228,14 @@ function build_bottom_panel!(right::GridLayout,
         channels_obs[] = KJ.getChannels(samp)
     end
 
+    interferences = Observable(Dict{Symbol,Vector{AbstractInterferenceSpec}}())
+
     bp = BottomPanel(fig, right, ctrls, section, ratio_grid, count_rate_ax,
         internal_label, internal_menu, add_btn, mode_menu,
         method_choice, p_channel, d_channel, sister_channel,
         p_proxy, d_proxy, sister_proxy,
         sample_obs, state, method, fit_obs, channels_obs,
-        group_rm_assignments, group_roles, ytransform,
+        group_rm_assignments, group_roles, interferences, ytransform,
         RatioSlot[],
         Observable(0),
         Ref{Union{Nothing,AddRatioPopup}}(nothing),
@@ -1185,8 +1254,11 @@ function build_bottom_panel!(right::GridLayout,
         open_with_defaults!(ensure_popup!(bp))
     end
 
+    # `channels_obs` is in the list because interference specs are validated
+    # against the run's channel list: a spec naming a channel a newly loaded
+    # run does not have has to drop out of the method.
     onany((_...) -> rebuild_method!(bp),
-        group_rm_assignments, group_roles,
+        group_rm_assignments, group_roles, interferences, channels_obs,
         p_channel, d_channel, sister_channel,
         p_proxy, d_proxy, sister_proxy)
 
@@ -1251,6 +1323,10 @@ struct BottomPanel <: BottomPanelBase
     channels_obs::Observable{Vector{String}}
     group_rm_assignments::Observable{Dict{String,String}}
     group_roles::Observable{Dict{String,Symbol}}
+    # role (:P/:D/:d) → configured isobaric interference corrections. Held
+    # here rather than on the method because `build_method` reconstructs the
+    # method from scratch on every channel/proxy edit.
+    interferences::Observable{Dict{Symbol,Vector{AbstractInterferenceSpec}}}
     ytransform::Observable{Function}
     ratio_defs::Vector{RatioSlot}
     defs_version::Observable{Int}
@@ -1446,7 +1522,9 @@ function rebuild_method!(bp::BottomPanel)
                                 d_proxy=bp.d_proxy[],
                                 s_proxy=bp.sister_proxy[],
                                 groups=bp.group_rm_assignments[],
-                                roles=bp.group_roles[])
+                                roles=bp.group_roles[],
+                                interferences=bp.interferences[],
+                                run_channels=bp.channels_obs[])
     end
 end
 
@@ -1490,13 +1568,26 @@ function refresh_config_group!(panel)
     return
 end
 
-"Collapse the ratio stack for Cmethods; restore it for Gmethods."
+"""
+Collapse the ratio stack for Cmethods; restore it for Gmethods.
+
+Sizing the row to zero is not enough on its own: the axes keep their
+decorations, and Makie draws the ylabel, ticks and legend relative to the
+now one-pixel-tall bbox, which lands them on top of the count-rate plot
+underneath. The blocks have to be hidden as well as squashed.
+"""
 function apply_mode_layout!(panel::BottomPanel, m)
-    if m isa KJ.Cmethod
-        rowsize!(panel.right_layout, 2, Fixed(0))
-    else
-        relayout_section!(panel)
+    show = !(m isa KJ.Cmethod)
+    for slot in panel.ratio_defs
+        for ax in slot.axes
+            set_block_visible!(ax, show)
+        end
+        for lg in slot.legends
+            set_block_visible!(lg, show)
+        end
+        set_block_visible!(slot.close_btn, show)
     end
+    show ? relayout_section!(panel) : rowsize!(panel.right_layout, 2, Fixed(0))
     return
 end
 
@@ -1909,17 +2000,22 @@ struct GroupState
     state_obs::Observable
     method_choice::Observable{String}
     group_rm_assignments::Observable
-    lcs_done_for_rm::Set{String}
+    expanded_groups::Set{String}
 end
 
 GroupState(state_obs, method_choice, group_rm_assignments) =
     GroupState(state_obs, method_choice, group_rm_assignments, Set{String}())
 
 """
-Apply a picker choice: `(sample)` clears the row's group (and every
-sibling in the same group); an RM name tags the row and, on the SECOND
-assignment of that RM, bulk-tags every sibling whose sample name shares
-the LCS prefix.
+Apply a picker choice: `(sample)` clears the row's group (and every sibling in
+the same group); an RM name puts the row in the group named by its sample-name
+prefix and, on the SECOND assignment into that group, bulk-tags every sibling
+sharing the prefix.
+
+The group is identified by the prefix, not by the reference material, so two
+groups can share one RM — the Re-Os configuration needs `Nist_massbias` and
+`Nist_REEint` both assigned to NIST610. `group_rm_assignments` carries the
+group → RM mapping that `KJ.Gmethod.groups` expects.
 """
 function assign_group!(gs::GroupState, rm::AbstractString, row)
     (isnothing(row) || !(row isa Integer)) && return
@@ -1927,6 +2023,7 @@ function assign_group!(gs::GroupState, rm::AbstractString, row)
     (isnothing(run) || row == 0 || row > length(run)) && return
     target = run[row]
     old_group = target.group
+    assignments = copy(gs.group_rm_assignments[])
     if rm == "(sample)"
         if old_group != "sample"
             for s in run
@@ -1936,28 +2033,34 @@ function assign_group!(gs::GroupState, rm::AbstractString, row)
             target.group = "sample"
         end
     else
+        label = group_label(gs.method_choice[], target.sname, rm)
+        # Expansion always keys off the sample-name prefix, which is the group
+        # name for a Gmethod but not for concentrations.
+        prefix = group_prefix(target.sname)
         other = nothing
         for s in run
-            s.group == rm && s !== target && (other = s; break)
+            s.group == label && s !== target && (other = s; break)
         end
         if isnothing(other)
-            target.group = rm
-            delete!(gs.lcs_done_for_rm, rm)
-        elseif rm in gs.lcs_done_for_rm
-            target.group = rm
+            target.group = label
+            delete!(gs.expanded_groups, label)
+        elseif label in gs.expanded_groups
+            target.group = label
         else
-            push!(gs.lcs_done_for_rm, rm)
-            pref = group_prefix(target.sname, other.sname)
-            target.group = rm
-            isempty(pref) || for s in run
-                startswith(s.sname, pref) && (s.group = rm)
+            push!(gs.expanded_groups, label)
+            for s in run
+                startswith(s.sname, prefix) && (s.group = label)
             end
+            target.group = label
         end
+        assignments[label] = rm
     end
     if old_group != "sample" && !any(s -> s.group == old_group, run)
-        delete!(gs.lcs_done_for_rm, old_group)
+        delete!(gs.expanded_groups, old_group)
+        delete!(assignments, old_group)
     end
-    sync_assignments_from_groups!(gs.group_rm_assignments, run, gs.method_choice[])
+    sync_assignments_from_groups!(gs.group_rm_assignments, run,
+                                  gs.method_choice[], assignments)
     notify(gs.state_obs)
 end
 
@@ -2018,16 +2121,31 @@ function open_with_defaults!(p::GroupPicker, sname::AbstractString,
 end
 
 """
-Rebuild `group → RM` from `samp.group` (which IS the RM name when not
-"sample"). Entries not in the current method's RM list are dropped.
+Prune `group → RM` to the groups that still exist in `run`, keeping each
+group's assigned RM.
+
+A group whose RM is unknown — one carried over from another method, or one
+present in the run before the picker touched it — gets a best-effort
+suggestion from [`autopreselect_rm`](@ref) and is dropped if nothing matches,
+since `KJ.Gmethod.groups` only describes reference materials.
+
+`known` supplies the mapping to preserve; it defaults to what the observable
+already holds, so a plain resync keeps existing assignments.
 """
 function sync_assignments_from_groups!(assignments::Observable,
-    run::AbstractVector{<:KJ.Sample}, method_name::AbstractString)
-    opts = Set(rm_options_for(method_name))
+    run::AbstractVector{<:KJ.Sample}, method_name::AbstractString,
+    known::AbstractDict = assignments[])
+    opts = rm_options_for(method_name)
+    valid = Set(opts)
     new_assigns = Dict{String,String}()
     for s in run
         s.group == "sample" && continue
-        s.group in opts && (new_assigns[s.group] = s.group)
+        haskey(new_assigns, s.group) && continue
+        rm = get(known, s.group, nothing)
+        if isnothing(rm) || !(rm in valid)
+            rm = autopreselect_rm(s.group, opts)
+        end
+        rm == RM_NONE || (new_assigns[s.group] = rm)
     end
     new_assigns == assignments[] || (assignments[] = new_assigns)
 end
@@ -2124,7 +2242,9 @@ function rebuild!(p::ReferencesPopup)
         idx = something(findfirst(==(current), opts), 1)
         rm_menu = Menu(p.container[r, 2]; options=opts, default=idx, width=140,
                        searchable=true)
-        role_default = get(ROLE_LABEL_OF, get(p.roles[], g, :standard),
+        role_default = get(ROLE_LABEL_OF,
+                           get(p.roles[], g,
+                               default_group_role(get(p.assignments[], g, ""))),
                            ROLE_DEFAULT_LABEL)
         role_idx = something(findfirst(==(role_default), ROLE_LABELS), 1)
         role_menu = Menu(p.container[r, 3];
@@ -2219,7 +2339,33 @@ function group_prefix(a::AbstractString, b::AbstractString)
         c1 == c2 || break
         write(buf, c1)
     end
-    s = String(take!(buf))
+    return strip_trailing_digits(String(take!(buf)))
+end
+
+"""
+Group label for a single analysis: its name with the trailing run number
+removed, so `\"BP - 01\"` and `\"BP - 02\"` both yield `\"BP - \"`.
+
+This is the group's identity, independent of which reference material it is
+later assigned — the same shape KJ's TUI produces with `addStandardsByPrefix`,
+and what lets two groups share one reference material.
+"""
+group_prefix(sname::AbstractString) =
+    (p = strip_trailing_digits(sname); isempty(p) ? sname : p)
+
+"""
+Name of the group an analysis joins when tagged with reference material `rm`.
+
+Geochronology groups are named for the sample prefix, so two groups can share
+one reference material. Concentration groups must be named for the glass:
+`KJ.predict` resolves a sample's group through `_KJ["glass"]` to get its
+reference concentrations, so any other label would break the calibration.
+"""
+group_label(method_name::AbstractString, sname::AbstractString,
+            rm::AbstractString) =
+    method_name == CONCENTRATION_OPTION ? rm : group_prefix(sname)
+
+function strip_trailing_digits(s::AbstractString)
     while !isempty(s) && isdigit(s[end])
         s = s[1:prevind(s, lastindex(s))]
     end
@@ -2245,8 +2391,37 @@ function rm_options_for(method_name::AbstractString)
     method_name == CONCENTRATION_OPTION &&
         return [RM_NONE; collect(KJ._KJ["glass"].names)]
     haskey(KJ._KJ["refmat"], method_name) || return [RM_NONE]
-    return [RM_NONE; collect(KJ._KJ["refmat"][method_name].names)]
+    refmats = collect(KJ._KJ["refmat"][method_name].names)
+    # Reference glasses are only in some decay systems' tables — Lu-Hf lists
+    # NIST610/612, Re-Os lists neither — but they are needed as interference
+    # and mass-bias standards in every system, which is what the TUI offers
+    # in its `glass` state.
+    return [RM_NONE; refmats; filter(!in(refmats), KJ._KJ["glass"].names)]
 end
+
+"""
+Whether `rm` names a reference glass.
+
+The test is by name and the two tables overlap: `NIST612` is both a Lu-Hf
+reference material (with an isotopic composition) and a reference glass (with
+elemental concentrations), so this cannot tell which sense the user meant. It
+is used only to pick a group's *default* role, where erring towards `:none` is
+the safe direction — KJ's own Lu-Hf method uses NIST612 through `Calibration!`
+rather than as a fractionation standard.
+"""
+is_reference_glass(rm::AbstractString) = rm in KJ._KJ["glass"].names
+
+"""
+Role a group takes when the user has not picked one.
+
+A glass-backed group is a mass-bias or interference standard, never a
+fractionation one — KJ's own Lu-Hf method puts NIST612 in `Calibration!`
+rather than in `standards` — so it stays inert until the user chooses.
+`build_method` and the References panel share this so the displayed role and
+the one the method uses cannot drift apart.
+"""
+default_group_role(rm::AbstractString) =
+    is_reference_glass(rm) ? :none : :standard
 
 # Per-group role:
 #   :standard → `method.standards` (fractionation),
