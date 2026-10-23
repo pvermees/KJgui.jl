@@ -34,7 +34,11 @@
 #   [ 3b] Remove-from-group — re-click the same cell, hit "(sample)"
 #        in the picker to clear, then re-tag Hogsbo (B7)
 #   [ 4] LCS group fill-in — tag hogsbo_pul-02, sibling propagation
-#   [ 5] References popup — open, close (B6 layout cleanup)
+#   [ 4b] Tag NIST612p as the NIST612 group — Process needs a mass-bias
+#        standard as well as a fractionation one.
+#   [ 5] References popup — set NIST612p's role to "Mass bias" (a
+#        glass-backed group defaults to "None" so it cannot silently join
+#        the fractionation fit)
 #   [ 6] Add ratio plot — popup → Apply (default P+S vs D)
 #   [ 7] Combined ↔ Split mode toggle
 #   [ 8] Window drag — resize the signal window by dragging its edge
@@ -44,17 +48,32 @@
 #        of the channel key)
 #   [ 8e] Time-axis outlier — double-click on the count-rate plot,
 #        red ✗ appears on the trace (A2 + C11)
+#   [ 8f] Interference corrections — mirrors KJ's TUI flow. Add the Lu176
+#        interference on D (channel picked, proxy derived); the applied
+#        ratio is flagged red against KJ's own reference constants. Swap to
+#        the on-mass channel to trigger the mass-shift warning, swap back,
+#        then add and remove a mono-isotopic correction with its X / Y / YO
+#        channels and calibration group.
 #   [ 9] Process — KJ.process! runs; the biplot section only becomes
 #        visible now that fit_obs is populated (A3)
 #   [ 9b] Biplot outlier — double-click a biplot point (A2 on biplot)
 #   [10] Zoom + next sample — final scrub through the run
+#   [C1] Concentration workflow — Method popup switches to Cmethod,
+#        the P/D/d rows collapse and an internal-standard picker takes
+#        their place inside the popup. Pick Al27→27, Apply.
+#   [C2] Tag NIST612p rows as the NIST612 RM group (picker rebuilds
+#        to the glass table on method switch).
+#   [C3] Process → Cfit; spinner animates during the fit.
+#   [C4] Switch back to Lu-Hf + re-Process so the closing shot is a
+#        fresh Gfit isochron.
 
 using Revise, KJgui, GLMakie, Makie
+import KJ
 
 isdefined(Main, :FakeInteraction) ||
     include(joinpath(@__DIR__, "..", "..", "Makie", "docs", "fake_interaction.jl"))
-using .FakeInteraction: Wait, MouseTo, LeftClick, LeftDown, LeftUp, Lazy,
-                        KeyDown, KeyUp
+using .FakeInteraction: Wait, WaitUntil, MouseTo, LeftClick, LeftDown, LeftUp,
+                        Lazy, KeyDown, KeyUp
 
 # Hidden GLMakie screen — `interaction_record` needs the screen open to
 # grab the framebuffer, but visible=true lets GLFW poll the real mouse
@@ -77,13 +96,40 @@ result.fig.scene.events.hasfocus[] = false
 # a `nothing` popup ref. Everything visible in the recording is driven
 # strictly by mouse/keyboard events below.
 notify(result.method_btn.clicks); sleep(0.2)
-close!(result.method_popup_ref[].popup)
+close!(result.method_popup_ref[].modal)
 KJgui.ensure_popup!(result.bot_panel)
-close!(result.bot_panel.popup_ref[].popup)
+close!(result.bot_panel.popup_ref[].modal)
 notify(result.channels_btn.clicks); sleep(0.2)
-close!(result.channels_popup_ref[].popup)
+close!(result.channels_popup_ref[].modal)
 notify(result.refs_btn.clicks); sleep(0.2)
-close!(result.refs_panel.popup)
+close!(result.refs_panel.modal)
+notify(result.interference_btn.clicks); sleep(0.2)
+close!(result.interference_popup_ref[].modal)
+sleep(0.2)
+
+# Off-camera JIT warm-up. The first `KJ.process!` of each method type
+# compiles a large chunk of KJ, which the recording would otherwise spend
+# ~a minute of spinner on per Process step. Run both once on a throwaway
+# copy of the run so the demo's own state is untouched.
+let warm = deepcopy(result.state[])
+    for s in warm
+        startswith(s.sname, "hogsbo_pul") && (s.group = "hogsbo_pul")
+        startswith(s.sname, "NIST612p") && (s.group = "NIST612")
+    end
+    gm = KJ.Gmethod(name = "Lu-Hf",
+                    groups = Dict("hogsbo_pul" => "Hogsbo", "NIST612" => "NIST612"),
+                    P = KJ.Pairing(ion = "Lu176", proxy = "Lu175",
+                                   channel = "Lu175 -> 175"),
+                    D = KJ.Pairing(ion = "Hf176", channel = "Hf176 -> 258"),
+                    d = KJ.Pairing(ion = "Hf177", proxy = "Hf178",
+                                   channel = "Hf178 -> 260"),
+                    standards = Set(["hogsbo_pul"]))
+    KJ.Calibration!(gm; standards = Set(["NIST612"]))
+    KJ.process!(warm, gm)
+    cm = KJ.Cmethod(warm; internal = ("Al27 -> 27", nothing),
+                    groups = Dict("NIST612" => "NIST612"))
+    KJ.process!(warm, cm)
+end
 sleep(0.2)
 
 fig    = result.fig
@@ -160,24 +206,25 @@ function option_strip_height(menu)
     pad = menu.textpadding[]
     return Float32(fs + pad[3] + pad[4])
 end
-function menu_dropdown_direction(menu)
-    bb = menu.layoutobservables.computedbbox[]
-    viewport_h = menu.blockscene.viewport[].widths[2]
-    list_h = length(collect(menu.options[])) * option_strip_height(menu)
-    below = bb.origin[2]
-    above = viewport_h - (bb.origin[2] + bb.widths[2])
-    return (below >= list_h || below > above) ? :down : :up
-end
 function menu_option_pos(menu, idx::Integer)
     bb = menu.layoutobservables.computedbbox[]
     h  = option_strip_height(menu)
     n  = length(collect(menu.options[]))
     x  = bb.origin[1] + bb.widths[1] / 2
-    y  = if menu_dropdown_direction(menu) === :down
-        bb.origin[2] - (idx - 0.5) * h
-    else
-        (bb.origin[2] + bb.widths[2]) + n * h - (idx - 0.5) * h
-    end
+    # Mirror Makie's own direction heuristic (menu.jl:66-79). The viewport
+    # is `blockscene.viewport` — for a top-level menu that's the whole
+    # figure, for a Modal-hosted menu it's the Modal's content region.
+    # Compare bbox to viewport POSITION (not size) so both cases work.
+    vp = menu.blockscene.viewport[]
+    below = bb.origin[2] - vp.origin[2]
+    above = (vp.origin[2] + vp.widths[2]) - (bb.origin[2] + bb.widths[2])
+    list_h = n * h
+    down = below >= list_h || below > above
+    # An upward list keeps reading order, so option 1 is at the TOP of the
+    # stack — farthest from the cell — and option `idx` sits
+    # `n - idx + 0.5` strips above the menu, not `idx - 0.5`.
+    y = down ? bb.origin[2] - (idx - 0.5) * h :
+               (bb.origin[2] + bb.widths[2]) + (n - idx + 0.5) * h
     return Point2f(x, y)
 end
 function menu_select_events(menu, target_label; pre_wait = 0.25, post_wait = 0.4)
@@ -192,10 +239,61 @@ function menu_select_events(menu, target_label; pre_wait = 0.25, post_wait = 0.4
     ]
 end
 
-method_button(name) = first(b for b in method_pop.method_buttons
+iface_pop() = result.interference_popup_ref[]
+
+# Centre of a Modal's close ×. `body_rect` is internal, but the content
+# Subfigure's bbox is inset from it by `contentpadding` on three sides and
+# additionally by `header_height` at the top, so the header band and the ×
+# within it are recoverable from the outside.
+function modal_close_pos(m::Makie.Modal)
+    sf  = m.subfigure.layoutobservables.computedbbox[]
+    pad = Float32(m.contentpadding[])
+    hh  = Float32(m.header_height[])
+    right = sf.origin[1] + sf.widths[1] + pad
+    top   = sf.origin[2] + sf.widths[2] + pad + hh
+    return Point2f(right - hh / 2, top - hh / 2)
+end
+
+# Menu whose options only exist once a popup has been rebuilt, so both the
+# menu and the option index have to be resolved at event time.
+function lazy_menu_option(menu_f, label)
+    return FakeInteraction.Lazy(_ -> begin
+        menu = menu_f()
+        opts = collect(menu.options[])
+        idx = findfirst(o -> string(o) == label, opts)
+        isnothing(idx) && error("Menu has no option labelled $(label)")
+        MouseTo(menu_option_pos(menu, idx))
+    end)
+end
+
+# Type a query into a searchable Menu and take the first match. This is how
+# the channel menus are meant to be used — a run has more channels than the
+# dropdown shows at once.
+function search_menu_events(menu_f, query; settle = 1.0)
+    return [
+        FakeInteraction.Lazy(_ -> MouseTo(block_center(menu_f()))),
+        LeftClick(), Wait(0.45),
+        FakeInteraction.TypeText(query), Wait(0.5),
+        FakeInteraction.KeyPress(Makie.Keyboard.enter), Wait(settle),
+    ]
+end
+
+current_pop() = result.method_popup_ref[]
+method_button(name) = first(b for b in current_pop().method_buttons
                                 if b.label[] == name)
+apply_btn() = current_pop().apply_btn
+internal_menu() = current_pop().internal_menu
 rm_button(name)     = first(b for b in picker.rm_buttons
                                 if b.label[] == name)
+
+# The References panel lays out one row per group (excluding the "sample"
+# catch-all), sorted, so `role_menus[i]` belongs to `groups[i]`.
+function role_menu_for(prefix::AbstractString)
+    groups = filter(!=("sample"), sort(unique(s.group for s in result.state[])))
+    i = findfirst(g -> startswith(g, prefix), groups)
+    isnothing(i) && error("no group starting with $(prefix)")
+    return result.refs_panel.role_menus[i]
+end
 
 # Map axis data-x → figure-pixel-x via the axis's CURRENT finallimits + the
 # scene's pixel viewport. Avoids `Makie.project` which can hang or give bad
@@ -233,19 +331,6 @@ end
 # Targets for the LCS-expansion step.
 pul_rows = findall(s -> startswith(s.sname, "hogsbo_pul - "), result.state[])
 
-# Diagnostic: log each Hogsbo click + picker visibility change.
-let h = first(b for b in picker.rm_buttons if b.label[] == "Hogsbo")
-    on(h.clicks) do n
-        println("    [Hogsbo.clicks = $n]  popup open = $(isopen(picker.popup))  ",
-                "mp = $(result.fig.scene.events.mouseposition[])")
-    end
-    on(picker.popup.scene.parent.visible) do v
-        println("    [picker overlay.visible = $v]  ",
-                "title = $(picker.sample_lbl.text[])")
-    end
-end
-
-
 events = [
     Wait(0.8),
 
@@ -258,7 +343,7 @@ events = [
     MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.8),
     MouseTo(block_center(method_button("U-Pb"))),  LeftClick(), Wait(1.4),
     MouseTo(block_center(method_button("Lu-Hf"))), LeftClick(), Wait(1.4),
-    MouseTo(block_center(method_pop.apply_btn)),   LeftClick(), Wait(0.8),
+    MouseTo(block_center(apply_btn())),   LeftClick(), Wait(0.8),
 
     # [3] Group selection: tag first hogsbo_pul sample as "Hogsbo"
     MouseTo(group_cell_pos(table, pul_rows[1])), LeftClick(), Wait(0.8),
@@ -280,12 +365,35 @@ events = [
     Lazy(_ -> MouseTo(block_center(rm_button("Hogsbo")))),
     LeftClick(), Wait(1.0),
 
-    # [5] References popup (B6): the group we just seeded now shows up
-    # as a row with an RM dropdown. Open, linger so the cleaned-up
-    # layout is visible, then close.
-    MouseTo(block_center(result.refs_btn)), LeftClick(), Wait(1.2),
-    MouseTo(block_center(result.refs_panel.popup.close_btn)),
+    # [4b] Tag the NIST612p analyses too. Processing needs a mass-bias
+    # standard as well as a fractionation one; without it `Calibration!`
+    # never runs and the isochron intercepts blow up far outside the data.
+    FakeInteraction.Lazy(_ -> begin
+        nist = findall(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, nist[1]))
+    end),
+    LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> begin
+        nist = findall(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, nist[2]))
+    end),
     LeftClick(), Wait(0.6),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(1.0),
+
+    # [5] References popup (B6): both groups now show up as rows with an RM
+    # dropdown and a role. A glass-backed group defaults to "None" so it
+    # cannot silently join the fractionation fit — set NIST612p to
+    # "Mass bias", which is the role KJ's own Lu-Hf method gives it.
+    MouseTo(block_center(result.refs_btn)), LeftClick(), Wait(1.4),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(role_menu_for("NIST612")))),
+    LeftClick(), Wait(0.5),
+    lazy_menu_option(() -> role_menu_for("NIST612"), "Mass bias"),
+    LeftClick(), Wait(1.2),
+    # Backdrop click dismisses the modal (dismiss_on_backdrop_click=true).
+    MouseTo(Point2f(80, 80)), LeftClick(), Wait(0.6),
 
     # [6] Add ratio plot (default P + S vs D)
     MouseTo(name_cell_pos(table, 1)), LeftClick(), Wait(0.5),
@@ -368,7 +476,7 @@ events = [
         MouseTo(block_center(on_cbs[target]))
     end),
     LeftClick(), Wait(0.8),
-    MouseTo(block_center(result.channels_popup_ref[].popup.close_btn)),
+    MouseTo(Point2f(80, 80)),
     LeftClick(), Wait(0.6),
 
     # [8e] Time-axis outlier: double-click on the count-rate plot. Places
@@ -382,10 +490,63 @@ events = [
     end),
     Wait(0.2), LeftClick(), Wait(0.05), LeftClick(), Wait(0.9),
 
+    # [8f] Interference corrections. The panel mirrors KJ's TUI flow: one
+    # section per P/D/d target, and for a poly-isotopic correction the user
+    # picks the CHANNEL the proxy is measured on while KJ derives the isotope
+    # from it (`channel2proxy`).
+    MouseTo(block_center(result.interference_btn)), LeftClick(), Wait(1.4),
+
+    # Only mass 176 has interferers in this run, so only D offers a menu.
+    # Adding Lu176 defaults its proxy channel to `Lu175 -> 257`, matching the
+    # target's reaction-cell mass shift. The row then reports the ratio KJ
+    # will actually multiply by — in red, because `settings/iratio.csv` holds
+    # a copy of the Re185 abundance on the Lu175 row, making the correction
+    # 62.7x too large.
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(iface_pop().add_menus[:D]))),
+    LeftClick(), Wait(0.6),
+    lazy_menu_option(() -> iface_pop().add_menus[:D], "Lu176"),
+    LeftClick(), Wait(2.4),
+
+    # Pick the on-mass channel instead by typing into the searchable menu.
+    # Its mass shift no longer matches the target's, and the panel says so
+    # rather than silently over-subtracting by orders of magnitude.
+    search_menu_events(() -> iface_pop().row_menus[(:D, 1, :channel)],
+                       "175 -> 175"; settle = 2.4)...,
+
+    # Back to the mass-shift-matched channel; that warning clears.
+    search_menu_events(() -> iface_pop().row_menus[(:D, 1, :channel)],
+                       "257"; settle = 1.8)...,
+
+    # A mono-isotopic correction on P: the interfering oxide is measured on
+    # channel X and corrected as X x YO / Y, calibrated on a sample group.
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(iface_pop().mono_buttons[:P]))),
+    LeftClick(), Wait(1.2),
+    search_menu_events(() -> iface_pop().row_menus[(:P, 1, :channel)], "Yb172")...,
+    search_menu_events(() -> iface_pop().row_menus[(:P, 1, :metal)], "175 -> 175")...,
+    search_menu_events(() -> iface_pop().row_menus[(:P, 1, :oxide)], "257")...,
+    # Tick the hogsbo group as the standard KJ fits the oxide rate on.
+    FakeInteraction.Lazy(_ -> begin
+        boxes = iface_pop().standard_boxes
+        key = first(k for k in keys(boxes) if startswith(k[3], "hogsbo"))
+        MouseTo(block_center(boxes[key]))
+    end),
+    LeftClick(), Wait(2.0),
+
+    # Drop the mono row again — the Lu176 correction is the one that belongs
+    # in this Lu-Hf run, and it stays applied through Process below.
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(iface_pop().row_buttons[(:P, 1)]))),
+    LeftClick(), Wait(1.4),
+
+    # Close via the header × — this panel deliberately does not dismiss on a
+    # backdrop click, so a near-miss can't discard the configuration.
+    FakeInteraction.Lazy(_ -> MouseTo(modal_close_pos(iface_pop().modal))),
+    LeftClick(), Wait(0.9),
+
     # [9] Process — KJ.process! produces a fit. Because the biplot row
     # is gated on `!isnothing(fit_obs[])`, this is the moment the
     # isochron biplot row snaps into view (A3).
-    MouseTo(block_center(result.process_btn)), LeftClick(), Wait(3.0),
+    MouseTo(block_center(result.process_btn)), LeftClick(),
+    WaitUntil(() -> !isnothing(result.fit[])), Wait(1.2),
 
     # Click a standard-sample row in the table so the fit overlay has
     # data on the ratio plot. Table's `on(table.i_selected)` handler
@@ -414,9 +575,81 @@ events = [
     LeftClick(), Wait(0.7),
     MouseTo(block_center(prev_btn)), LeftClick(), Wait(0.7),
     LeftClick(), Wait(1.0),
+
+    # [C1] Concentration workflow. Open Method popup → click Concentration.
+    # The popup auto-rebuilds as Cmethod in place (P/D/d role rows are
+    # replaced by the internal-standard picker). Pick Al27→27, Apply.
+    MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(method_button("Concentration")))),
+    LeftClick(), Wait(1.2),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(internal_menu()))),
+    LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(menu_option_pos(internal_menu(),
+        findfirst(==("Al27 -> 27"), collect(internal_menu().options[]))))),
+    LeftClick(), Wait(0.8),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(apply_btn()))),
+    LeftClick(), Wait(1.2),
+
+    # [C2] Tag a NIST612p sample as the NIST612 concentration standard.
+    # The group picker's RM list rebuilt on the method switch and now
+    # offers glass names (NIST610/612/614/BHVO-2G/BCR-2g).
+    FakeInteraction.Lazy(_ -> begin
+        idx = findfirst(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, something(idx, 1)))
+    end),
+    LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(0.8),
+
+    # Sibling propagation: tag a second NIST612p row → LCS fill-in.
+    FakeInteraction.Lazy(_ -> begin
+        nist = findall(s -> startswith(s.sname, "NIST612p"), result.state[])
+        MouseTo(group_cell_pos(table, nist[2]))
+    end),
+    LeftClick(), Wait(0.6),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(rm_button("NIST612")))),
+    LeftClick(), Wait(1.0),
+
+    # [C3] Process → Cfit. Spinner animates during the fit, sidebar
+    # button flips to "Processing…" and back.
+    MouseTo(block_center(result.process_btn)), LeftClick(),
+    WaitUntil(() -> result.fit[] isa KJ.Cfit), Wait(1.2),
+
+    # [C4] Back to Lu-Hf and re-Process so the video ends on a fresh
+    # Gfit isochron (the Cfit from [C3] doesn't render on the isochron
+    # biplot). Clicking Lu-Hf in the Cmethod popup auto-swaps it back
+    # to a Gmethod popup; Apply commits the P/D/d defaults + closes.
+    MouseTo(block_center(result.method_btn)), LeftClick(), Wait(0.7),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(method_button("Lu-Hf")))),
+    LeftClick(), Wait(1.2),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(apply_btn()))),
+    LeftClick(), Wait(0.8),
+
+    # [C2] re-tagged the NIST612p rows in concentration mode, where a group
+    # is named for the glass rather than the sample prefix. That renamed the
+    # group and dropped the role set in [5], so set it again before the
+    # closing fit.
+    MouseTo(block_center(result.refs_btn)), LeftClick(), Wait(1.2),
+    FakeInteraction.Lazy(_ -> MouseTo(block_center(role_menu_for("NIST612")))),
+    LeftClick(), Wait(0.5),
+    lazy_menu_option(() -> role_menu_for("NIST612"), "Mass bias"),
+    LeftClick(), Wait(1.0),
+    MouseTo(Point2f(80, 80)), LeftClick(), Wait(0.6),
+
+    MouseTo(block_center(result.process_btn)),     LeftClick(),
+    WaitUntil(() -> !isnothing(result.fit[])), Wait(1.2),
+
+    # Land on a standard row for the closing shot so the isochron
+    # + dashed fit lines on the ratio plot are both visible.
+    FakeInteraction.Lazy(_ -> begin
+        idx = findfirst(s -> startswith(s.sname, "hogsbo_pul"), result.state[])
+        MouseTo(name_cell_pos(table, something(idx, 1)))
+    end),
+    LeftClick(), Wait(1.5),
 ]
 
-video_path = joinpath(@__DIR__, "..", "..", "..", "demo.mp4")
+video_path = get(ENV, "KJGUI_DEMO_PATH",
+                 joinpath(@__DIR__, "..", "..", "..", "demo.mp4"))
 FakeInteraction.interaction_record(fig, video_path, events;
                                    fps = 30, px_per_unit = 1)
 println("Saved: ", video_path)
